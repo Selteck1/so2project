@@ -102,7 +102,7 @@ class So2AccessibilityService : AccessibilityService() {
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun captureScreen() {
+    private fun captureScreen(saveCleanCopy: Boolean = false) {
         if (!captureInProgress.compareAndSet(false, true)) return
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(screenshot: ScreenshotResult) {
@@ -124,6 +124,21 @@ class So2AccessibilityService : AccessibilityService() {
                         lastScreenBitmap = runCatching {
                             safeBitmap.copy(Bitmap.Config.ARGB_8888, false)
                         }.getOrNull()
+                    }
+                    if (saveCleanCopy) {
+                        runCatching {
+                            val directory = File(filesDir, "screenshots")
+                            if (!directory.exists()) directory.mkdirs()
+                            val file = File(directory, "screen_clean_" + System.currentTimeMillis() + ".png")
+                            FileOutputStream(file).use { output ->
+                                safeBitmap.compress(Bitmap.CompressFormat.PNG, 95, output)
+                                output.flush()
+                            }
+                            AutomationBridge.update(status = "Чистый скриншот сохранён: " + file.name)
+                        }.onFailure { error ->
+                            AutomationBridge.update(status = "Не удалось сохранить скриншот: " + error.message)
+                        }
+                        floatingPanel?.setVisible(true)
                     }
                     textAnalyzer.recognize(safeBitmap).whenComplete { page, error ->
                         handler.post {
@@ -161,6 +176,7 @@ class So2AccessibilityService : AccessibilityService() {
             }
 
             override fun onFailure(errorCode: Int) {
+                if (saveCleanCopy) floatingPanel?.setVisible(true)
                 captureInProgress.set(false)
                 AutomationBridge.update(
                     status = "Android не разрешил снимок экрана (код " + errorCode + ")"
@@ -213,6 +229,19 @@ class So2AccessibilityService : AccessibilityService() {
             )
             .build()
         return dispatchGesture(gesture, null, null)
+    }
+
+    fun captureCleanScreenshot() {
+        floatingPanel?.setVisible(false)
+        handler.postDelayed({ captureScreen(saveCleanCopy = true) }, 180L)
+    }
+
+    fun tapAnchorConfigured(key: String, anchorX: Float, anchorY: Float): Boolean {
+        val spec = AutomationCoordinates.specs.firstOrNull { it.key == key }
+        val configured = AutomationCoordinates.get(this, key)
+        val dx = if (spec == null) 0f else configured.x - spec.defaultX
+        val dy = if (spec == null) 0f else configured.y - spec.defaultY
+        return tapNormalized((anchorX + dx).coerceIn(0f, 1f), (anchorY + dy).coerceIn(0f, 1f))
     }
 
     fun tapConfigured(key: String, defaultX: Float, defaultY: Float): Boolean {
