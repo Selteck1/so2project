@@ -70,7 +70,9 @@ object ScreenClassifier {
             ("недостаточно" in text && ("голд" in text || "пополните" in text || "баланс" in text)) ->
             ScreenKind.LOW_BALANCE
         "с наклейками" in text && ("предложений" in text || "купить" in text) -> ScreenKind.OFFERS
-        "применить" in text && "сбросить" in text -> ScreenKind.MARKET_FILTERS
+        ("применить" in text && ("сбросить" in text || "наклейки" in text || "тип предмета" in text)) ||
+            ("сбросить" in text && ("название" in text || "редкость" in text || "тип" in text)) ->
+            ScreenKind.MARKET_FILTERS
         "история продаж" in text || "история покупок" in text -> ScreenKind.HISTORY
         "рынок" in text && ("мои запросы" in text || "история" in text || "фильтр" in text) -> ScreenKind.MARKET_HOME
         "играть" in text || Regex("""\bplay\b""").containsMatchIn(text) -> ScreenKind.MAIN_MENU
