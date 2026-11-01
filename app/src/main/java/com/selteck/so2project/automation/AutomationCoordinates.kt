@@ -25,7 +25,7 @@ object AutomationCoordinates {
         CoordinateSpec("filter_reset", "Фильтр → Сбросить", "Сброс всех предыдущих параметров.", 0.82f, 0.81f),
         CoordinateSpec("filter_stickers", "Фильтр → Наклейки", "Тип предмета «Наклейки».", 0.13f, 0.90f),
         CoordinateSpec("sort_price", "Сортировка → Цена", "Открыть выбор сортировки по цене.", 0.12f, 0.34f),
-        CoordinateSpec("sort_ascending", "Сортировка → По возрастанию", "Выбрать сначала самые дешёвые.", 0.12f, 0.31f),
+        CoordinateSpec("sort_ascending", "Сортировка → По возрастанию", "Кнопка/стрелка направления у строки «Цена» (правый край строки).", 0.23f, 0.34f),
         CoordinateSpec("filter_apply", "Фильтр → Применить", "Применение фильтра.", 0.82f, 0.91f),
         CoordinateSpec("stickers_toggle", "Лот → С наклейками", "Флажок должен оставаться включённым.", 0.49f, 0.37f),
         CoordinateSpec("offer_sticker_1", "Лот → Наклейка 1", "Первая фиксированная ячейка слева.", 0.635f, 0.48f),
