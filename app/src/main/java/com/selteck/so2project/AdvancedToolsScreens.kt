@@ -141,7 +141,7 @@ fun ManualStickerContent(context: Context, onBack: () -> Unit) {
     var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var name by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
-    var variant by remember { mutableStateOf("default") }
+    var variant by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("Выбери файл с изображением наклейки.") }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -210,7 +210,7 @@ fun ManualStickerContent(context: Context, onBack: () -> Unit) {
             value = variant,
             onValueChange = { variant = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Вариант (необязательно)") },
+            label = { Text("Вариант (необязательно; пустое поле = авто-отпечаток)") },
             singleLine = true
         )
         Text(status, color = Color.LightGray, fontSize = 12.sp)
