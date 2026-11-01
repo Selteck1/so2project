@@ -14,7 +14,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     private enum class Phase {
         WAIT_MAIN_MENU, WAIT_MARKET, CONFIGURE_FILTER, WAIT_RESULTS,
         OPEN_ITEM, ENABLE_STICKERS, WATCH_ACTIVITY, CATALOG_FILTER,
-        CATALOG_SCAN, PAUSED
+        CATALOG_SCAN, CATALOG_SORT, CATALOG_OPEN_ITEM, CATALOG_WAIT_GRID, PAUSED
     }
 
     private var phase = Phase.WAIT_MAIN_MENU
@@ -32,6 +32,15 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     private var isInspectingDeal = false
     private var pendingPurchase: PendingPurchase? = null
     private var baseSkinPrice: Double? = null
+    private var catalogSortPriceSelected = false
+    private var catalogSortDirectionSelected = false
+    private var catalogSortFrames = 0
+    private var catalogOpenWaitFrames = 0
+    private var catalogBackAttempts = 0
+    private var catalogPendingTitle: String? = null
+    private var catalogLastScrollSignature = ""
+    private var catalogNoMoveCount = 0
+    private val visitedCatalogItems = LinkedHashSet<String>()
 
     private data class PendingPurchase(
         val itemName: String,
@@ -40,7 +49,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     )
 
     fun onFrame(page: OcrPage, bitmap: Bitmap) {
-        if (!AutomationBridge.monitoringRequested || phase == Phase.PAUSED) return
+        if (!AutomationBridge.monitoringRequested || AutomationBridge.paused || phase == Phase.PAUSED) return
 
         val reading = ScreenClassifier.classify(page)
         when (reading.kind) {
@@ -48,6 +57,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                 phase = Phase.PAUSED
                 AutomationBridge.monitoringRequested = false
                 service.handleLowBalance(bitmap)
+                service.tapConfigured("low_balance_back", 0.03f, 0.06f)
                 return
             }
             ScreenKind.ERROR_DIALOG -> {
@@ -79,13 +89,14 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         when (phase) {
             Phase.WAIT_MAIN_MENU, Phase.WAIT_MARKET -> {
                 if (reading.kind == ScreenKind.MAIN_MENU && canAct()) {
-                    service.tapNormalized(0.035f, 0.50f)
+                    service.tapConfigured("menu_market", 0.035f, 0.50f)
                     phase = Phase.WAIT_MARKET
                     actionStatus("Открываю рынок")
                 } else if (reading.kind == ScreenKind.MARKET_HOME) {
                     val filter = page.findLineContaining("Фильтр")
                     if (filter != null && canAct()) {
-                        tapLine(page, filter, "Открываю фильтры рынка")
+                        service.tapConfigured("market_filter", 0.035f, 0.36f)
+                        actionStatus("Открываю фильтры рынка")
                         phase = Phase.CONFIGURE_FILTER
                         resetDone = false
                         categoryDone = false
@@ -135,7 +146,8 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                             actionStatus("Фильтр «С наклейками» включён. Слежу за последними действиями.")
                         } else if (stickersToggleAttempts < 2 && canAct()) {
                             stickersToggleAttempts += 1
-                            service.tapNormalized(
+                            service.tapConfigured(
+                                "stickers_toggle",
                                 checkboxX.toFloat() / page.width,
                                 toggle.bounds.centerY().toFloat() / page.height
                             )
@@ -174,7 +186,8 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         if (!resetDone) {
             val reset = page.findLineContaining("Сбросить")
             if (reset != null && canAct()) {
-                tapLine(page, reset, "Сбрасываю фильтры")
+                service.tapConfigured("filter_reset", 0.80f, 0.80f)
+                actionStatus("Сбрасываю фильтры")
                 resetDone = true
             }
             return
@@ -182,7 +195,8 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         if (!categoryDone) {
             val category = page.findLineContaining(AutomationBridge.selectedCategory)
             if (category != null && canAct()) {
-                tapLine(page, category, "Выбираю категорию " + AutomationBridge.selectedCategory)
+                service.tapConfigured("filter_stickers", category.bounds.centerX().toFloat() / page.width, category.bounds.centerY().toFloat() / page.height)
+                actionStatus("Выбираю категорию " + AutomationBridge.selectedCategory)
                 categoryDone = true
             } else {
                 AutomationBridge.update(status = "Не вижу категорию " + AutomationBridge.selectedCategory)
@@ -211,7 +225,8 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         if (!applyDone) {
             val apply = page.findLineContaining("Применить")
             if (apply != null && canAct()) {
-                tapLine(page, apply, "Применяю фильтр " + target)
+                service.tapConfigured("filter_apply", apply.bounds.centerX().toFloat() / page.width, apply.bounds.centerY().toFloat() / page.height)
+                actionStatus("Применяю фильтр " + target)
                 applyDone = true
                 phase = Phase.WAIT_RESULTS
             }
@@ -222,91 +237,227 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         when (phase) {
             Phase.WAIT_MAIN_MENU, Phase.WAIT_MARKET -> {
                 if (reading.kind == ScreenKind.MAIN_MENU && canAct()) {
-                    service.tapNormalized(0.035f, 0.50f)
+                    service.tapConfigured("menu_market", 0.035f, 0.50f)
                     phase = Phase.WAIT_MARKET
                     actionStatus("Открываю рынок для заполнения базы")
                 } else if (reading.kind == ScreenKind.MARKET_HOME) {
                     val filter = page.findLineContaining("Фильтр")
                     if (filter != null && canAct()) {
-                        tapLine(page, filter, "Открываю фильтр наклеек")
+                        service.tapConfigured("market_filter", 0.035f, 0.36f)
                         phase = Phase.CATALOG_FILTER
                         resetDone = false
                         categoryDone = false
                         applyDone = false
+                        catalogSortPriceSelected = false
+                        catalogSortDirectionSelected = false
+                        actionStatus("Открываю фильтр каталога")
                     }
                 }
             }
+
             Phase.CATALOG_FILTER -> {
+                if (reading.kind != ScreenKind.MARKET_FILTERS) {
+                    AutomationBridge.update(status = "Ожидаю окно фильтра. На экране сейчас: " + reading.kind)
+                    return
+                }
                 if (!resetDone) {
                     val reset = page.findLineContaining("Сбросить")
                     if (reset != null && canAct()) {
-                        tapLine(page, reset, "Сбрасываю фильтры каталога")
+                        service.tapConfigured("filter_reset", reset.bounds.centerX().toFloat() / page.width, reset.bounds.centerY().toFloat() / page.height)
                         resetDone = true
+                        actionStatus("Сбрасываю все фильтры")
                     }
                     return
                 }
                 if (!categoryDone) {
                     val stickers = page.findLineContaining("Наклейки")
                     if (stickers != null && canAct()) {
-                        tapLine(page, stickers, "Выбираю категорию «Наклейки»")
+                        service.tapConfigured("filter_stickers", stickers.bounds.centerX().toFloat() / page.width, stickers.bounds.centerY().toFloat() / page.height)
                         categoryDone = true
+                        actionStatus("Выбираю тип предмета «Наклейки»")
                     } else {
-                        AutomationBridge.update(status = "Не вижу категорию «Наклейки»")
+                        AutomationBridge.update(status = "Ищу категорию «Наклейки» в левом списке фильтра")
                     }
                     return
                 }
-                val apply = page.findLineContaining("Применить")
-                if (apply != null && canAct()) {
-                    tapLine(page, apply, "Применяю фильтр наклеек")
-                    applyDone = true
-                    phase = Phase.CATALOG_SCAN
+                if (!applyDone) {
+                    val apply = page.findLineContaining("Применить")
+                    if (apply != null && canAct()) {
+                        service.tapConfigured("filter_apply", apply.bounds.centerX().toFloat() / page.width, apply.bounds.centerY().toFloat() / page.height)
+                        applyDone = true
+                        phase = Phase.CATALOG_SORT
+                        actionStatus("Применяю фильтр наклеек")
+                    }
                 }
             }
-            Phase.CATALOG_SCAN -> {
-                if (
-                    reading.kind == ScreenKind.MARKET_GRID ||
-                    page.fullText.contains("Sticker", ignoreCase = true) ||
-                    (page.locatedPrices.size >= 4 && page.lines.size > 8)
-                ) {
-                    val cards = service.catalogScanner.scanVisibleCards(page, bitmap)
-                    discoveredOffers += cards
-                    catalogPageCount += 1
-                    val signature = page.lines
-                        .filter { line ->
-                            val x = line.bounds.centerX().toFloat() / page.width
-                            val y = line.bounds.centerY().toFloat() / page.height
-                            x in 0.23f..0.99f && y in 0.18f..0.91f &&
-                                line.text.any { it.isLetter() }
-                        }
-                        .joinToString("|") { it.text.trim() } + "|" +
-                        page.locatedPrices
-                            .filter { it.bounds.centerY() in
-                                (page.height * 0.18f).toInt()..(page.height * 0.91f).toInt() }
-                            .joinToString("|") { String.format("%.2f", it.value) }
-                    if (signature == lastCatalogPageSignature || cards == 0) {
-                        catalogStalePages += 1
-                    } else {
-                        catalogStalePages = 0
+
+            Phase.CATALOG_SORT, Phase.CATALOG_SCAN -> {
+                if (reading.kind != ScreenKind.MARKET_GRID &&
+                    !page.fullText.contains("Sticker", ignoreCase = true)) {
+                    AutomationBridge.update(status = "Жду список наклеек после фильтра. Экран: " + reading.kind)
+                    return
+                }
+
+                val pageSignature = page.lines
+                    .filter { line ->
+                        val normalized = OcrPage.normalize(line.text)
+                        val inGrid = line.bounds.centerX() >= page.width * GRID_START_X &&
+                            line.bounds.centerY() in (page.height * 0.18f).toInt()..(page.height * 0.93f).toInt()
+                        inGrid && (normalized.contains("sticker") ||
+                            page.locatedPrices.any { price ->
+                                price.bounds.centerX() - line.bounds.centerX() in -page.width * 0.02f..page.width * 0.20f &&
+                                    price.bounds.centerY() > line.bounds.bottom &&
+                                    price.bounds.centerY() - line.bounds.bottom < page.height * 0.13f
+                            })
                     }
-                    lastCatalogPageSignature = signature
-                    if (catalogStalePages >= 3 || catalogPageCount >= MAX_CATALOG_PAGES) {
+                    .joinToString("|") { OcrPage.normalize(it.text) } + "|" +
+                    page.locatedPrices
+                        .filter { it.bounds.centerY() in (page.height * 0.18f).toInt()..(page.height * 0.93f).toInt() }
+                        .joinToString("|") { String.format("%.2f", it.value) }
+
+                if (pageSignature.isNotBlank() && pageSignature != lastCatalogPageSignature) {
+                    val saved = service.catalogScanner.scanVisibleCards(page, bitmap)
+                    discoveredOffers += saved
+                    catalogPageCount += 1
+                    lastCatalogPageSignature = pageSignature
+                    AutomationBridge.update(
+                        status = "Страница $catalogPageCount: сохранено карточек $saved. Уже просмотрено ${visitedCatalogItems.size} наклеек."
+                    )
+                }
+
+                if (!catalogSortPriceSelected) {
+                    val priceSort = page.lines.firstOrNull {
+                        OcrPage.normalize(it.text).contains("цена") &&
+                            it.bounds.centerX() < page.width * 0.18f &&
+                            it.bounds.centerY() < page.height * 0.38f
+                    }
+                    if (canAct()) {
+                        service.tapConfigured(
+                            "sort_price",
+                            priceSort?.bounds?.centerX()?.toFloat()?.div(page.width) ?: 0.05f,
+                            priceSort?.bounds?.centerY()?.toFloat()?.div(page.height) ?: 0.30f
+                        )
+                        catalogSortPriceSelected = true
+                        catalogSortFrames = 0
+                        actionStatus("Выбираю сортировку по цене")
+                    }
+                    return
+                }
+
+                if (!catalogSortDirectionSelected) {
+                    val ascending = page.lines.firstOrNull {
+                        val value = OcrPage.normalize(it.text)
+                        value.contains("возрастан") ||
+                            value.contains("от деш") ||
+                            value.contains("сначала деш")
+                    }
+                    if (ascending != null && canAct()) {
+                        tapLine(page, ascending, "Сортирую от самой дешёвой наклейки к дорогой")
+                        catalogSortDirectionSelected = true
+                        phase = Phase.CATALOG_SCAN
+                        return
+                    }
+                    catalogSortFrames += 1
+                    if (catalogSortFrames >= 2) {
+                        // Some game builds immediately apply ascending order when the Price option is selected.
+                        catalogSortDirectionSelected = true
+                        phase = Phase.CATALOG_SCAN
+                        actionStatus("Сортировка по цене выбрана. Продолжаю просмотр карточек.")
+                    }
+                    return
+                }
+
+                val candidates = page.lines
+                    .filter { OcrPage.normalize(it.text).contains("sticker") }
+                    .sortedWith(compareBy<OcrLine> { it.bounds.top }.thenBy { it.bounds.left })
+                val nextSticker = candidates.firstOrNull {
+                    OcrPage.normalize(it.text) !in visitedCatalogItems
+                }
+
+                if (nextSticker != null && canAct()) {
+                    val key = OcrPage.normalize(nextSticker.text)
+                    visitedCatalogItems += key
+                    catalogPendingTitle = nextSticker.text.trim()
+                    catalogOpenWaitFrames = 0
+                    catalogBackAttempts = 0
+                    val tapX = nextSticker.bounds.centerX().toFloat() / page.width
+                    val tapY = (nextSticker.bounds.top - page.height * 0.10f)
+                        .coerceAtLeast(page.height * 0.18f).toFloat() / page.height
+                    val accepted = service.tapNormalized(tapX, tapY)
+                    if (!accepted) {
+                        pause("Android отклонил касание карточки наклейки. Проверь разрешение специальных возможностей и координаты.")
+                    } else {
+                        phase = Phase.CATALOG_OPEN_ITEM
+                        actionStatus("Открываю наклейку: " + catalogPendingTitle + ". После просмотра вернусь кнопкой «Назад».")
+                    }
+                    return
+                }
+
+                if (nextSticker == null) {
+                    if (catalogPageCount >= MAX_CATALOG_PAGES) {
                         phase = Phase.PAUSED
                         AutomationBridge.monitoringRequested = false
-                        actionStatus(
-                            "Сканирование остановлено. В базе найдено " + discoveredOffers +
-                                " карточек за " + catalogPageCount + " страниц."
-                        )
-                    } else if (canAct()) {
-                        service.swipeNormalized(0.965f, 0.78f, 0.965f, 0.36f, 420L)
-                        actionStatus(
-                            "Просматриваю страницу каталога " + catalogPageCount +
-                                " · найдено " + discoveredOffers + " наклеек"
-                        )
+                        actionStatus("Сканирование остановлено по лимиту страниц. В базе просмотрено ${visitedCatalogItems.size} наклеек.")
+                        return
                     }
-                } else if (reading.kind == ScreenKind.MARKET_FILTERS) {
-                    AutomationBridge.update(status = "Ожидаю применения фильтра наклеек")
+                    if (pageSignature == catalogLastScrollSignature) {
+                        catalogNoMoveCount += 1
+                    } else {
+                        catalogNoMoveCount = 0
+                    }
+                    catalogLastScrollSignature = pageSignature
+                    if (catalogNoMoveCount >= 3) {
+                        pause("Полоса прокрутки не сдвинула каталог после трёх попыток. Настрой точки прокрутки в разделе «Координаты».")
+                    } else if (canAct()) {
+                        service.swipeConfigured(
+                            "catalog_scroll_bottom",
+                            "catalog_scroll_top",
+                            ScreenPoint(0.99f, 0.82f),
+                            ScreenPoint(0.99f, 0.42f),
+                            520L
+                        )
+                        actionStatus("Прокручиваю список по правой полосе, чтобы перейти к следующим наклейкам.")
+                    }
                 }
             }
+
+            Phase.CATALOG_OPEN_ITEM -> {
+                val leftGrid = reading.kind != ScreenKind.MARKET_GRID &&
+                    !page.fullText.contains("Sticker", ignoreCase = true)
+                if (leftGrid || reading.kind == ScreenKind.ITEM_DETAIL ||
+                    reading.kind == ScreenKind.OFFERS || reading.kind == ScreenKind.UNKNOWN
+                ) {
+                    val returned = service.goBack()
+                    phase = Phase.CATALOG_WAIT_GRID
+                    catalogBackAttempts = 1
+                    actionStatus(
+                        if (returned) "Осмотрел «" + (catalogPendingTitle ?: "наклейку") + "». Возвращаюсь назад."
+                        else "Не удалось отправить команду «Назад» при осмотре наклейки."
+                    )
+                } else {
+                    catalogOpenWaitFrames += 1
+                    if (catalogOpenWaitFrames >= 3) {
+                        pause("Карточка «" + (catalogPendingTitle ?: "наклейка") + "» не открылась. Проверь координаты карточки и касания.")
+                    }
+                }
+            }
+
+            Phase.CATALOG_WAIT_GRID -> {
+                if (reading.kind == ScreenKind.MARKET_GRID ||
+                    page.fullText.contains("Sticker", ignoreCase = true)
+                ) {
+                    phase = Phase.CATALOG_SCAN
+                    catalogPendingTitle = null
+                    actionStatus("Вернулся к списку. Открываю следующую наклейку.")
+                } else if (catalogBackAttempts < 2) {
+                    catalogBackAttempts += 1
+                    service.goBack()
+                    actionStatus("Повторно возвращаюсь к списку наклеек.")
+                } else {
+                    pause("После просмотра наклейки не удалось вернуться к каталогу. Остановил автоматизацию.")
+                }
+            }
+
             else -> Unit
         }
     }
@@ -434,8 +585,11 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         }
 
         if (canAct()) {
-            val center = page.normalizedCenter(buyLine)
-            val accepted = service.tapNormalized(center.first, center.second)
+            val accepted = service.tapConfigured(
+                "purchase_confirm",
+                page.normalizedCenter(buyLine).first,
+                page.normalizedCenter(buyLine).second
+            )
             if (!accepted) {
                 pause("Android не принял нажатие подтверждения. Покупка не считается выполненной.")
                 return
