@@ -27,6 +27,10 @@ class So2AccessibilityService : AccessibilityService() {
 
     private val captureInProgress = AtomicBoolean(false)
     private var loopStarted = false
+    private var floatingPanel: FloatingControlPanel? = null
+    private var lastScreenBitmap: Bitmap? = null
+    @Volatile private var lastScreenshotWidth = 0
+    @Volatile private var lastScreenshotHeight = 0
 
     private val captureLoop = object : Runnable {
         override fun run() {
@@ -68,6 +72,11 @@ class So2AccessibilityService : AccessibilityService() {
             ?: rootInActiveWindow?.packageName?.toString()
             ?: return
         AutomationBridge.update(foregroundPackage = packageName)
+        if (packageName == AutomationBridge.targetPackage && AutomationBridge.monitoringRequested) {
+            if (floatingPanel == null) {
+                floatingPanel = FloatingControlPanel(this).also { it.show() }
+            }
+        }
         if (packageName == AutomationBridge.targetPackage &&
             AutomationBridge.monitoringRequested && !loopStarted
         ) {
@@ -84,6 +93,10 @@ class So2AccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         handler.removeCallbacks(captureLoop)
         if (::textAnalyzer.isInitialized) textAnalyzer.close()
+        floatingPanel?.remove()
+        floatingPanel = null
+        lastScreenBitmap?.recycle()
+        lastScreenBitmap = null
         AutomationBridge.detach(this)
         super.onDestroy()
     }
@@ -104,6 +117,14 @@ class So2AccessibilityService : AccessibilityService() {
                     }
 
                     val safeBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
+                    lastScreenshotWidth = safeBitmap.width
+                    lastScreenshotHeight = safeBitmap.height
+                    synchronized(this@So2AccessibilityService) {
+                        lastScreenBitmap?.recycle()
+                        lastScreenBitmap = runCatching {
+                            safeBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                        }.getOrNull()
+                    }
                     textAnalyzer.recognize(safeBitmap).whenComplete { page, error ->
                         handler.post {
                             try {
@@ -115,6 +136,11 @@ class So2AccessibilityService : AccessibilityService() {
                                         status = "Распознан экран: " + reading.kind
                                     )
                                     automationEngine.onFrame(page, safeBitmap)
+                                    floatingPanel?.update(
+                                        status = AutomationBridge.state.value.status,
+                                        bitmap = safeBitmap,
+                                        ocrText = page.fullText
+                                    )
                                 } else {
                                     AutomationBridge.update(
                                         status = "Ошибка OCR: " + (error?.cause?.message ?: error?.message)
@@ -142,10 +168,12 @@ class So2AccessibilityService : AccessibilityService() {
     }
 
     fun tapNormalized(xRatio: Float, yRatio: Float, durationMs: Long = 70L): Boolean {
-        val width = resources.displayMetrics.widthPixels.toFloat()
-        val height = resources.displayMetrics.heightPixels.toFloat()
-        val x = (width * xRatio).coerceIn(0f, width)
-        val y = (height * yRatio).coerceIn(0f, height)
+        val width = (lastScreenshotWidth.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels).toFloat()
+        val height = (lastScreenshotHeight.takeIf { it > 0 }
+            ?: resources.displayMetrics.heightPixels).toFloat()
+        val x = (width * xRatio).coerceIn(0f, width - 1f)
+        val y = (height * yRatio).coerceIn(0f, height - 1f)
         val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
             .addStroke(
@@ -166,8 +194,10 @@ class So2AccessibilityService : AccessibilityService() {
         endY: Float,
         durationMs: Long = 420L
     ): Boolean {
-        val width = resources.displayMetrics.widthPixels.toFloat()
-        val height = resources.displayMetrics.heightPixels.toFloat()
+        val width = (lastScreenshotWidth.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels).toFloat()
+        val height = (lastScreenshotHeight.takeIf { it > 0 }
+            ?: resources.displayMetrics.heightPixels).toFloat()
         val path = Path().apply {
             moveTo(width * startX.coerceIn(0f, 1f), height * startY.coerceIn(0f, 1f))
             lineTo(width * endX.coerceIn(0f, 1f), height * endY.coerceIn(0f, 1f))
@@ -182,6 +212,48 @@ class So2AccessibilityService : AccessibilityService() {
             )
             .build()
         return dispatchGesture(gesture, null, null)
+    }
+
+    fun tapConfigured(key: String, defaultX: Float, defaultY: Float): Boolean {
+        val point = AutomationCoordinates.get(this, key)
+        val spec = AutomationCoordinates.specs.firstOrNull { it.key == key }
+        val x = if (spec == null) defaultX else point.x
+        val y = if (spec == null) defaultY else point.y
+        return tapNormalized(x, y)
+    }
+
+    fun swipeConfigured(
+        startKey: String,
+        endKey: String,
+        defaultStart: ScreenPoint,
+        defaultEnd: ScreenPoint,
+        durationMs: Long = 420L
+    ): Boolean {
+        val start = AutomationCoordinates.get(this, startKey)
+        val end = AutomationCoordinates.get(this, endKey)
+        return swipeNormalized(start.x, start.y, end.x, end.y, durationMs)
+    }
+
+    fun goBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
+
+    fun saveLastScreenshot(): String? {
+        val snapshot = synchronized(this) {
+            lastScreenBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+        } ?: return null
+        return try {
+            val directory = File(filesDir, "screenshots")
+            if (!directory.exists()) directory.mkdirs()
+            val file = File(directory, "screen_" + System.currentTimeMillis() + ".png")
+            FileOutputStream(file).use { output ->
+                snapshot.compress(Bitmap.CompressFormat.PNG, 100, output)
+                output.flush()
+            }
+            file.absolutePath
+        } catch (_: Exception) {
+            null
+        } finally {
+            snapshot.recycle()
+        }
     }
 
     /**
