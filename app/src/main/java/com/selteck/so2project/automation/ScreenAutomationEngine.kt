@@ -14,7 +14,8 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     private enum class Phase {
         WAIT_MAIN_MENU, WAIT_MARKET, CONFIGURE_FILTER, WAIT_RESULTS,
         OPEN_ITEM, ENABLE_STICKERS, WATCH_ACTIVITY, CATALOG_FILTER,
-        CATALOG_SCAN, CATALOG_SORT, CATALOG_OPEN_ITEM, CATALOG_WAIT_GRID, PAUSED
+        CATALOG_SCAN, CATALOG_SORT, CATALOG_OPEN_ITEM, CATALOG_WAIT_GRID,
+        OFFER_STICKER_OPEN, OFFER_STICKER_WAIT_ROW, PAUSED
     }
 
     private var phase = Phase.WAIT_MAIN_MENU
@@ -41,6 +42,10 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     private var catalogLastScrollSignature = ""
     private var catalogNoMoveCount = 0
     private val visitedCatalogItems = LinkedHashSet<String>()
+    private var pendingOfferInspection: OfferRowInspection? = null
+    private var pendingStickerIndex = 0
+    private var stickerOpenWaitFrames = 0
+    private var stickerBackAttempts = 0
 
     private data class PendingPurchase(
         val itemName: String,
@@ -75,6 +80,15 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                 return
             }
             else -> Unit
+        }
+
+        if (phase == Phase.OFFER_STICKER_OPEN) {
+            handleOfferStickerOpen(page, reading)
+            return
+        }
+        if (phase == Phase.OFFER_STICKER_WAIT_ROW) {
+            handleOfferStickerWaitRow(page, reading, bitmap)
+            return
         }
 
         when (AutomationBridge.mode) {
@@ -519,34 +533,137 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                 return@inspectCandidateRowsAsync
             }
 
-            val buyWord = page.words
-                .filter {
-                    val word = OcrPage.normalize(it.text)
-                    word == "купить" || word == "buy"
-                }
-                .minByOrNull { kotlin.math.abs(it.bounds.centerY() - profitable.centerY) }
-
-            if (buyWord == null || !canAct()) {
-                actionStatus("Окуп подтверждён, но кнопка покупки в этой строке не распознана. Пропускаю.")
-                return@inspectCandidateRowsAsync
-            }
-
             pendingPurchase = PendingPurchase(targetName(), profitable.price, profitable.centerY)
-            val accepted = service.tapNormalized(
-                buyWord.bounds.centerX().toFloat() / page.width,
-                buyWord.bounds.centerY().toFloat() / page.height
-            )
-            if (!accepted) {
-                pendingPurchase = null
-                pause("Android не принял нажатие на найденную кнопку покупки. Останавливаюсь.")
-                return@inspectCandidateRowsAsync
-            }
-            phase = Phase.WATCH_ACTIVITY
+            pendingOfferInspection = profitable
+            pendingStickerIndex = 0
+            stickerOpenWaitFrames = 0
+            stickerBackAttempts = 0
             actionStatus(
-                "Окуп найден: прибыль " + String.format("%.2f", profitable.estimatedProfit) +
-                    " G. Проверяю диалог подтверждения для " + targetName() + "."
+                "Окуп подтверждён: прибыль " + String.format("%.2f", profitable.estimatedProfit) +
+                    " G. Теперь по очереди открываю каждую наклейку на строке и возвращаюсь назад."
             )
+            tapNextOfferSticker(page)
         }
+    }
+
+    private fun tapNextOfferSticker(page: OcrPage) {
+        val offer = pendingOfferInspection ?: run {
+            pause("Потерял данные проверяемого лота. Покупка остановлена.")
+            return
+        }
+        if (pendingStickerIndex >= offer.stickerCenters.size) {
+            tapBuyAfterStickerInspection(page, offer)
+            return
+        }
+
+        val center = offer.stickerCenters[pendingStickerIndex]
+        val key = "offer_sticker_${center.slot + 1}"
+        val spec = AutomationCoordinates.specs.firstOrNull { it.key == key }
+        val configured = AutomationCoordinates.get(service, key)
+        val xOffset = if (spec != null) configured.x - spec.defaultX else 0f
+        val yOffset = if (spec != null) configured.y - spec.defaultY else 0f
+        val x = center.x.toFloat() / page.width + xOffset
+        val y = center.y.toFloat() / page.height + yOffset
+
+        pendingStickerIndex += 1
+        stickerOpenWaitFrames = 0
+        val accepted = service.tapNormalized(x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
+        if (!accepted) {
+            pause("Android не принял касание по наклейке в строке лота. Покупку не нажимаю.")
+            return
+        }
+        phase = Phase.OFFER_STICKER_OPEN
+        actionStatus("Открываю наклейку ${pendingStickerIndex} из ${offer.stickerCenters.size}; после просмотра нажму системную кнопку «Назад».")
+    }
+
+    private fun handleOfferStickerOpen(page: OcrPage, reading: ScreenReading) {
+        val stillOfferRows = reading.kind == ScreenKind.OFFERS &&
+            page.findLineContaining("С наклейками") != null
+        if (!stillOfferRows) {
+            val backAccepted = service.goBack()
+            phase = Phase.OFFER_STICKER_WAIT_ROW
+            stickerBackAttempts = 1
+            actionStatus(
+                if (backAccepted) "Наклейка открылась. Закрываю её системной кнопкой «Назад»."
+                else "Не удалось отправить «Назад» после просмотра наклейки."
+            )
+        } else {
+            stickerOpenWaitFrames += 1
+            if (stickerOpenWaitFrames >= 3) {
+                pause("Нажатие по наклейке не открыло её отдельный экран. Остановил проверку, чтобы не нажать не туда.")
+            }
+        }
+    }
+
+    private fun handleOfferStickerWaitRow(
+        page: OcrPage,
+        reading: ScreenReading,
+        bitmap: Bitmap
+    ) {
+        val toggle = page.findLineContaining("С наклейками")
+        if (reading.kind == ScreenKind.OFFERS && toggle != null) {
+            val offer = pendingOfferInspection ?: run {
+                pause("Нет данных проверяемого лота после возврата.")
+                return
+            }
+            val priceStillPresent = page.locatedPrices.any {
+                abs(it.value - offer.price) < 0.005 &&
+                    abs(it.bounds.centerY() - offer.centerY) < page.height * 0.09f
+            }
+            if (!priceStillPresent) {
+                pause("После просмотра наклейки список изменился: нужная цена больше не на той строке. Покупку отменяю.")
+                return
+            }
+
+            val checkboxX = (toggle.bounds.left - page.width * 0.015f).toInt().coerceAtLeast(0)
+            val checked = service.isCheckboxChecked(bitmap, checkboxX, toggle.bounds.centerY())
+            if (checked != true) {
+                if (canAct()) {
+                    service.tapConfigured(
+                        "stickers_toggle",
+                        checkboxX.toFloat() / page.width,
+                        toggle.bounds.centerY().toFloat() / page.height
+                    )
+                    actionStatus("Возвращаю флажок «С наклейками» в активное состояние.")
+                }
+                return
+            }
+
+            tapNextOfferSticker(page)
+        } else if (stickerBackAttempts < 2) {
+            stickerBackAttempts += 1
+            service.goBack()
+            actionStatus("Возвращаюсь к исходному списку предложений.")
+        } else {
+            pause("Не удалось вернуться к исходной строке предложений после просмотра наклейки.")
+        }
+    }
+
+    private fun tapBuyAfterStickerInspection(page: OcrPage, offer: OfferRowInspection) {
+        val buyWord = page.words
+            .filter {
+                val word = OcrPage.normalize(it.text)
+                word == "купить" || word == "buy"
+            }
+            .minByOrNull { abs(it.bounds.centerY() - offer.centerY) }
+        if (buyWord == null || !canAct()) {
+            pause("Все наклейки просмотрены, но кнопка «Купить» именно в этой строке не найдена. Покупку пропускаю.")
+            return
+        }
+
+        val configured = AutomationCoordinates.get(service, "offer_buy")
+        val spec = AutomationCoordinates.specs.firstOrNull { it.key == "offer_buy" }
+        val yOffset = if (spec != null) configured.y - spec.defaultY else 0f
+        val y = (buyWord.bounds.centerY().toFloat() / page.height + yOffset).coerceIn(0f, 1f)
+        val accepted = service.tapNormalized(configured.x, y)
+        if (!accepted) {
+            pause("Android не принял нажатие кнопки покупки после проверки наклеек.")
+            return
+        }
+        phase = Phase.WATCH_ACTIVITY
+        actionStatus(
+            "Проверил все ${offer.stickerCenters.size} наклейки. Открываю подтверждение покупки и сверю название скина и точную цену."
+        )
     }
 
     private fun confirmPurchase(page: OcrPage) {
