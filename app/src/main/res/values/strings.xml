@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SO2 Project</string>
+    <string name="accessibility_service_name">SO2 Project — распознавание и управление</string>
+    <string name="accessibility_service_description">Считывает изображение активного экрана Standoff 2 и выполняет действия только после включения пользователем мониторинга.</string>
+</resources>

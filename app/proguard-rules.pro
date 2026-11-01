@@ -1,0 +1,2 @@
+-keep class com.selteck.so2project.data.** { *; }
+-keep class com.google.mlkit.** { *; }
