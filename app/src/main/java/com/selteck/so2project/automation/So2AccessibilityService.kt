@@ -35,8 +35,18 @@ class So2AccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        textAnalyzer = ScreenTextAnalyzer()
+        textAnalyzer = ScreenTextAnalyzer(this)
         AutomationBridge.attach(this)
+        AutomationBridge.update(status = "Загрузка русской и английской OCR-моделей…")
+        textAnalyzer.initialize().whenComplete { _, error ->
+            handler.post {
+                if (error == null) {
+                    AutomationBridge.update(status = "OCR ru+en готова")
+                } else {
+                    AutomationBridge.update(status = "Не удалось подготовить OCR: " + (error.cause?.message ?: error.message))
+                }
+            }
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -78,27 +88,31 @@ class So2AccessibilityService : AccessibilityService() {
                         return
                     }
                     val safeBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
-                    textAnalyzer.recognize(safeBitmap)
-                        .addOnSuccessListener { text ->
-                            val reading = ScreenClassifier.classify(text)
-                            AutomationBridge.update(
-                                lastText = text,
-                                lastScreen = reading.kind.name,
-                                status = "Экран распознан: " + reading.kind
-                            )
+                    textAnalyzer.recognize(safeBitmap).whenComplete { text, error ->
+                        handler.post {
+                            try {
+                                if (error == null) {
+                                    val reading = ScreenClassifier.classify(text.orEmpty())
+                                    AutomationBridge.update(
+                                        lastText = text.orEmpty(),
+                                        lastScreen = reading.kind.name,
+                                        status = "Экран распознан: " + reading.kind
+                                    )
+                                } else {
+                                    AutomationBridge.update(status = "Ошибка OCR: " + (error.cause?.message ?: error.message))
+                                }
+                            } finally {
+                                if (safeBitmap !== bitmap) safeBitmap.recycle()
+                                captureInProgress.set(false)
+                            }
                         }
-                        .addOnFailureListener { error ->
-                            AutomationBridge.update(status = "Ошибка распознавания: " + error.message)
-                        }
-                        .addOnCompleteListener {
-                            if (safeBitmap !== bitmap) safeBitmap.recycle()
-                            captureInProgress.set(false)
-                        }
+                    }
                 } catch (error: Exception) {
                     captureInProgress.set(false)
                     AutomationBridge.update(status = "Ошибка снимка экрана: " + error.message)
                 }
             }
+
             override fun onFailure(errorCode: Int) {
                 captureInProgress.set(false)
                 AutomationBridge.update(status = "Android не разрешил снимок экрана (код " + errorCode + ")")
