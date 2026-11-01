@@ -54,6 +54,8 @@ import java.util.Locale
 
 @Composable
 fun CoordinatesContent(context: Context, onBack: () -> Unit) {
+    var selectedIndex by remember { mutableStateOf(0) }
+    val selected = AutomationCoordinates.specs[selectedIndex]
     Column(
         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -65,18 +67,30 @@ fun CoordinatesContent(context: Context, onBack: () -> Unit) {
             fontWeight = FontWeight.Bold
         )
         Text(
-            "Телефон: 720×1640 (портрет). В Standoff 2 скриншот поворачивается в 1640×720. Координаты ниже задаются в процентах от игрового кадра, поэтому поворот учитывается автоматически.",
+            "Координаты задаются в процентах от игрового кадра. Выбери одну кнопку, измени X/Y и сохрани. Редактор показывает только одну настройку за раз, чтобы не перегружать телефон.",
             color = Color.LightGray,
             fontSize = 13.sp
         )
-        Text(
-            "Вводи X и Y как проценты от ширины и высоты игрового изображения. Например, X=50 и Y=50 — центр экрана. Сохраняй каждую строку отдельно.",
-            color = Color.LightGray,
-            fontSize = 12.sp
-        )
-        AutomationCoordinates.specs.forEach { spec ->
-            CoordinateEditorRow(context, spec)
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1B2028))) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${selectedIndex + 1} / ${AutomationCoordinates.specs.size}", color = Color(0xFFFFB547))
+                Text(selected.title, color = Color.White, fontWeight = FontWeight.Bold)
+                Text(selected.description, color = Color.LightGray, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = selectedIndex > 0,
+                        onClick = { selectedIndex-- },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("ПРЕДЫДУЩАЯ") }
+                    OutlinedButton(
+                        enabled = selectedIndex < AutomationCoordinates.specs.lastIndex,
+                        onClick = { selectedIndex++ },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("СЛЕДУЮЩАЯ") }
+                }
+            }
         }
+        CoordinateEditorRow(context, selected)
         OutlinedButton(
             onClick = { AutomationCoordinates.reset(context) },
             modifier = Modifier.fillMaxWidth()
