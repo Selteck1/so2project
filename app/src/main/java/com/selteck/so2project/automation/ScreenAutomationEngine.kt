@@ -319,7 +319,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                             line.bounds.centerY() in (page.height * 0.18f).toInt()..(page.height * 0.93f).toInt()
                         inGrid && (normalized.contains("sticker") ||
                             page.locatedPrices.any { price ->
-                                price.bounds.centerX() - line.bounds.centerX() in -page.width * 0.02f..page.width * 0.20f &&
+                                (price.bounds.centerX() - line.bounds.centerX()).toFloat() in -page.width * 0.02f..page.width * 0.20f &&
                                     price.bounds.centerY() > line.bounds.bottom &&
                                     price.bounds.centerY() - line.bounds.bottom < page.height * 0.13f
                             })
