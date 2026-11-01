@@ -1,6 +1,8 @@
 package com.selteck.so2project.automation
 
-data class LocatedPrice(val value: Double, val line: OcrLine)
+import android.graphics.Rect
+
+data class LocatedPrice(val value: Double, val line: OcrLine, val bounds: Rect)
 
 data class ScreenReading(
     val kind: ScreenKind,
@@ -27,33 +29,35 @@ object ScreenClassifier {
         val text = rawText.lowercase().replace('ё', 'е')
         val prices = extractPrices(rawText)
         return ScreenReading(
-            kind = classifyText(text),
-            prices = prices,
-            locatedPrices = emptyList(),
-            hasStickerToggle = "с наклейками" in text || "with stickers" in text,
-            hasBuyButton = "купить" in text || Regex("""\bbuy\b""").containsMatchIn(text),
-            recentActivityLines = emptyList()
+            classifyText(text), prices, emptyList(),
+            "с наклейками" in text || "with stickers" in text,
+            "купить" in text || Regex("""\bbuy\b""").containsMatchIn(text),
+            emptyList()
         )
     }
 
     fun classify(page: OcrPage): ScreenReading {
         val text = page.fullText.lowercase().replace('ё', 'е')
-        val located = page.lines.flatMap { line ->
-            priceRegex.findAll(line.text).mapNotNull { match ->
-                match.groupValues.getOrNull(1)?.replace(',', '.')?.toDoubleOrNull()?.let {
-                    LocatedPrice(it, line)
+        val lines = page.lines.associateBy { it.lineIndex }
+        val located = page.words.flatMap { word ->
+            priceRegex.findAll(word.text).mapNotNull { match ->
+                match.groupValues.getOrNull(1)?.replace(',', '.')?.toDoubleOrNull()?.let { amount ->
+                    val line = lines[word.lineIndex] ?: OcrLine(
+                        word.text, Rect(word.bounds), word.confidence, word.lineIndex
+                    )
+                    LocatedPrice(amount, line, Rect(word.bounds))
                 }
             }.toList()
         }
         val recent = page.linesInVerticalBand(0.80f, 1.0f)
             .filter { activityPattern.containsMatchIn(it.text) }
         return ScreenReading(
-            kind = classifyText(text),
-            prices = located.map { it.value },
-            locatedPrices = located,
-            hasStickerToggle = "с наклейками" in text || "with stickers" in text,
-            hasBuyButton = "купить" in text || Regex("""\bbuy\b""").containsMatchIn(text),
-            recentActivityLines = recent
+            classifyText(text),
+            located.map { it.value },
+            located,
+            "с наклейками" in text || "with stickers" in text,
+            "купить" in text || Regex("""\bbuy\b""").containsMatchIn(text),
+            recent
         )
     }
 
@@ -68,8 +72,7 @@ object ScreenClassifier {
         "с наклейками" in text && ("предложений" in text || "купить" in text) -> ScreenKind.OFFERS
         "применить" in text && "сбросить" in text -> ScreenKind.MARKET_FILTERS
         "история продаж" in text || "история покупок" in text -> ScreenKind.HISTORY
-        "рынок" in text && ("мои запросы" in text || "история" in text || "фильтр" in text) ->
-            ScreenKind.MARKET_HOME
+        "рынок" in text && ("мои запросы" in text || "история" in text || "фильтр" in text) -> ScreenKind.MARKET_HOME
         "играть" in text || Regex("""\bplay\b""").containsMatchIn(text) -> ScreenKind.MAIN_MENU
         "инвентарь" in text -> ScreenKind.INVENTORY
         "осмотреть" in text || ("купить" in text && "предложений" in text) -> ScreenKind.ITEM_DETAIL
