@@ -32,7 +32,7 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
     private var lastPreview: Bitmap? = null
 
     private val params = WindowManager.LayoutParams(
-        dp(246),
+        dp(188),
         WindowManager.LayoutParams.WRAP_CONTENT,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -48,7 +48,7 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
         if (root != null) return
         val panel = LinearLayout(service).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(9), dp(7), dp(9), dp(8))
+            setPadding(dp(6), dp(4), dp(6), dp(5))
             background = GradientDrawable().apply {
                 setColor(Color.argb(232, 18, 22, 29))
                 cornerRadius = dp(12).toFloat()
@@ -58,10 +58,10 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
         root = panel
 
         val header = TextView(service).apply {
-            text = "SO2  •  ПАНЕЛЬ УПРАВЛЕНИЯ      ↕"
+            text = "SO2  •  ПАНЕЛЬ  ↕"
             setTextColor(Color.rgb(255, 190, 90))
-            textSize = 12f
-            setPadding(dp(3), dp(4), dp(3), dp(8))
+            textSize = 10f
+            setPadding(dp(2), dp(2), dp(2), dp(3))
             setOnTouchListener(DragListener())
         }
         panel.addView(header)
@@ -70,7 +70,7 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
             text = "Ожидание экрана…"
             setTextColor(Color.WHITE)
             textSize = 11f
-            maxLines = 3
+            maxLines = 2
             setPadding(dp(3), 0, dp(3), dp(6))
         }
         panel.addView(statusText)
@@ -102,6 +102,7 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
         secondRow.addView(makeButton("ПРОСМОТР") {
             detailsVisible = !detailsVisible
             preview?.visibility = if (detailsVisible) View.VISIBLE else View.GONE
+            if (detailsVisible) preview?.setImageBitmap(lastPreview)
             detailsText?.visibility = if (detailsVisible) View.VISIBLE else View.GONE
         }, weightedButton())
         panel.addView(secondRow)
@@ -112,7 +113,7 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
             setBackgroundColor(Color.rgb(6, 8, 12))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(108)
+                dp(84)
             ).apply { topMargin = dp(7) }
         }
         panel.addView(preview)
@@ -139,9 +140,10 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
         detailsText?.text = "Распознанный экран:\n" + (ocrText ?: "пока нет данных").take(280)
         if (bitmap != null) {
             val scaled = Bitmap.createScaledBitmap(bitmap, 480, 210, true)
+            preview?.setImageDrawable(null)
             lastPreview?.recycle()
             lastPreview = scaled
-            preview?.setImageBitmap(scaled)
+            if (detailsVisible) preview?.setImageBitmap(scaled)
         }
         refreshButtons()
     }
@@ -167,14 +169,14 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
             text = label
             textSize = 9f
             isAllCaps = false
-            minHeight = dp(34)
-            minimumHeight = dp(34)
+            minHeight = dp(28)
+            minimumHeight = dp(28)
             setPadding(dp(2), 0, dp(2), 0)
             setOnClickListener { action() }
         }
 
     private fun weightedButton() = LinearLayout.LayoutParams(
-        0, dp(36), 1f
+        0, dp(30), 1f
     ).apply {
         marginEnd = dp(3)
         bottomMargin = dp(3)
