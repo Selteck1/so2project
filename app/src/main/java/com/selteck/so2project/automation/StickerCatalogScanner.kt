@@ -261,7 +261,9 @@ class StickerCatalogScanner(context: Context) {
     }
 
     private fun iconCells(screen: Bitmap, price: android.graphics.Rect): List<android.graphics.Rect> {
-        val regionRight = (price.left - screen.width * 0.008f).toInt()
+        // Screenshot annotations show a little gap between the fourth icon and the price.
+        // This keeps the four fixed slots aligned (including empty left slots).
+        val regionRight = (price.left - screen.width * ICON_PRICE_GAP).toInt()
         val regionLeft = (regionRight - screen.width * ICON_REGION_WIDTH).toInt()
         val top = (price.centerY() - screen.height * ICON_REGION_HEIGHT / 2f).toInt()
         val bottom = (price.centerY() + screen.height * ICON_REGION_HEIGHT / 2f).toInt()
@@ -428,7 +430,8 @@ class StickerCatalogScanner(context: Context) {
         private const val GRID_IMAGE_HEIGHT = 0.22f
         private const val OFFER_TOP = 0.40f
         private const val OFFER_BOTTOM = 0.82f
-        private const val ICON_REGION_WIDTH = 0.13f
+        private const val ICON_REGION_WIDTH = 0.115f
+        private const val ICON_PRICE_GAP = 0.023f
         private const val ICON_REGION_HEIGHT = 0.075f
         private const val MATCH_THRESHOLD = 0.86
         private const val MIN_MATCH_MARGIN = 0.04
