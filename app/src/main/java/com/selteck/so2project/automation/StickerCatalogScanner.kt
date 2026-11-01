@@ -364,7 +364,7 @@ class StickerCatalogScanner(context: Context) {
         private const val GRID_START_X = 0.247f
         private const val GRID_STEP_X = 0.185f
         private const val GRID_CARD_WIDTH = 0.18f
-        private const val GRID_IMAGE_HEIGHT = 0.29f
+        private const val GRID_IMAGE_HEIGHT = 0.22f
         private const val OFFER_TOP = 0.40f
         private const val OFFER_BOTTOM = 0.82f
         private const val ICON_REGION_WIDTH = 0.155f

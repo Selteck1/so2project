@@ -263,7 +263,11 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                 }
             }
             Phase.CATALOG_SCAN -> {
-                if (reading.kind == ScreenKind.MARKET_GRID || page.fullText.contains("Sticker", ignoreCase = true)) {
+                if (
+                    reading.kind == ScreenKind.MARKET_GRID ||
+                    page.fullText.contains("Sticker", ignoreCase = true) ||
+                    (page.locatedPrices.size >= 4 && page.lines.size > 8)
+                ) {
                     val cards = service.catalogScanner.scanVisibleCards(page, bitmap)
                     discoveredOffers += cards
                     catalogPageCount += 1
