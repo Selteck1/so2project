@@ -76,7 +76,7 @@ object ScreenClassifier {
         "играть" in text || Regex("""\bplay\b""").containsMatchIn(text) -> ScreenKind.MAIN_MENU
         "инвентарь" in text -> ScreenKind.INVENTORY
         "осмотреть" in text || ("купить" in text && "предложений" in text) -> ScreenKind.ITEM_DETAIL
-        text.contains("sticker") && priceRegex.containsMatchIn(text) -> ScreenKind.MARKET_GRID
+        text.contains("sticker") && priceRegex.findAll(text).count() >= 3 -> ScreenKind.MARKET_GRID
         else -> ScreenKind.UNKNOWN
     }
 
