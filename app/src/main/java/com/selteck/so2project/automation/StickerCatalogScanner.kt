@@ -42,15 +42,41 @@ class StickerCatalogScanner(context: Context) {
 
     fun scanVisibleCards(page: OcrPage, screen: Bitmap): Int {
         if (page.width <= 0 || page.height <= 0) return 0
-        val titles = page.lines.filter { Regex("""\bsticker\b""", RegexOption.IGNORE_CASE).containsMatchIn(it.text) }
-        if (titles.isEmpty()) return 0
+        val explicitStickerTitles = page.lines.filter {
+            Regex("""\bsticker\b""", RegexOption.IGNORE_CASE).containsMatchIn(it.text)
+        }
+        val titleCandidates = if (explicitStickerTitles.isNotEmpty()) {
+            explicitStickerTitles
+        } else {
+            page.lines.filter { line ->
+                val normalized = OcrPage.normalize(line.text)
+                val hasLetters = line.text.any { it.isLetter() }
+                val inGridArea = line.bounds.centerX() >= page.width * GRID_START_X &&
+                    line.bounds.centerY() in (page.height * 0.20f).toInt()..(page.height * 0.90f).toInt()
+                val isUiLabel = normalized in setOf(
+                    "рынок", "мои запросы", "история", "сбросить", "применить",
+                    "фильтр", "наклейки", "название", "regular", "stattrack"
+                )
+                val xNorm = line.bounds.centerX().toFloat() / page.width
+                val column = (((xNorm - GRID_START_X) / GRID_STEP_X).roundToInt()).coerceIn(0, 3)
+                val left = (page.width * (GRID_START_X + column * GRID_STEP_X)).toInt()
+                val right = (left + page.width * GRID_CARD_WIDTH).toInt()
+                val hasNearbyPrice = page.locatedPrices.any { located ->
+                    located.bounds.centerX() in left..right &&
+                        located.bounds.centerY() > line.bounds.bottom &&
+                        located.bounds.centerY() - line.bounds.bottom < page.height * 0.12f
+                }
+                hasLetters && inGridArea && !isUiLabel && hasNearbyPrice
+            }
+        }
+        if (titleCandidates.isEmpty()) return 0
 
         val savedKeys = mutableSetOf<String>()
         var scanned = 0
         val root = File(appContext.filesDir, "sticker_catalog")
         if (!root.exists()) root.mkdirs()
 
-        for (title in titles) {
+        for (title in titleCandidates) {
             val itemName = title.text.trim().replace(Regex("""\s+"""), " ")
             if (itemName.length < 5) continue
 
@@ -70,8 +96,8 @@ class StickerCatalogScanner(context: Context) {
                 }
                 .minByOrNull { it.second.bounds.top - title.bounds.bottom } ?: continue
 
-            val cropTop = (page.height * GRID_IMAGE_TOP).toInt().coerceIn(0, page.height - 2)
-            val cropBottom = (title.bounds.top - page.height * 0.008f).toInt().coerceIn(cropTop + 1, page.height)
+            val cropBottom = (title.bounds.top - page.height * 0.008f).toInt().coerceIn(1, page.height)
+            val cropTop = (cropBottom - page.height * GRID_IMAGE_HEIGHT).toInt().coerceIn(0, cropBottom - 1)
             val crop = runCatching {
                 Bitmap.createBitmap(screen, cardLeft, cropTop, cardRight - cardLeft, cropBottom - cropTop)
             }.getOrNull() ?: continue
@@ -110,6 +136,7 @@ class StickerCatalogScanner(context: Context) {
         screen: Bitmap,
         page: OcrPage,
         candidatePrice: Double,
+        cheapestBaseSkinPrice: Double,
         configuredMinStickerPrice: Double,
         minimumProfit: Double,
         callback: (List<OfferRowInspection>) -> Unit
@@ -123,7 +150,15 @@ class StickerCatalogScanner(context: Context) {
         scope.launch {
             val results = try {
                 val records = runCatching { database.stickerDao().getAll() }.getOrDefault(emptyList())
-                inspectCandidateRows(snapshot, page, candidatePrice, configuredMinStickerPrice, minimumProfit, records)
+                inspectCandidateRows(
+                    snapshot,
+                    page,
+                    candidatePrice,
+                    cheapestBaseSkinPrice,
+                    configuredMinStickerPrice,
+                    minimumProfit,
+                    records
+                )
             } catch (_: Throwable) {
                 emptyList()
             } finally {
@@ -137,11 +172,14 @@ class StickerCatalogScanner(context: Context) {
         screen: Bitmap,
         page: OcrPage,
         candidatePrice: Double,
+        cheapestBaseSkinPrice: Double,
         configuredMinStickerPrice: Double,
         minimumProfit: Double,
         records: List<StickerEntity>
     ): List<OfferRowInspection> {
-        if (records.isEmpty()) return emptyList()
+        if (records.isEmpty() || cheapestBaseSkinPrice <= 0.0 || !cheapestBaseSkinPrice.isFinite()) {
+            return emptyList()
+        }
 
         val rows = page.locatedPrices
             .filter {
@@ -153,14 +191,6 @@ class StickerCatalogScanner(context: Context) {
             .sortedByDescending { it.bounds.centerY() }
             .take(3)
         if (rows.isEmpty()) return emptyList()
-
-        val visiblePrices = page.locatedPrices
-            .filter {
-                it.bounds.centerY() in
-                    (page.height * OFFER_TOP).toInt()..(page.height * OFFER_BOTTOM).toInt()
-            }
-            .map { it.value }
-        val cheapestBasePrice = visiblePrices.minOrNull() ?: candidatePrice
 
         return rows.map { located ->
             val matches = mutableListOf<StickerIconMatch>()
@@ -194,7 +224,7 @@ class StickerCatalogScanner(context: Context) {
             val recognized = visibleIconCount > 0 && unknownCount == 0 && matches.size == visibleIconCount
             val hasConfiguredSticker = matches.any { it.marketPrice >= configuredMinStickerPrice }
             val profit = StickerProfitCalculator.evaluate(
-                cheapestBaseSkinPrice = cheapestBasePrice,
+                cheapestBaseSkinPrice = cheapestBaseSkinPrice,
                 purchasePrice = candidatePrice,
                 stickerMarketPrices = matches.map { it.marketPrice },
                 minimumStickerPrice = PROFIT_STICKER_THRESHOLD,
@@ -260,7 +290,12 @@ class StickerCatalogScanner(context: Context) {
         val variance = (sumSquare / sampleCount) - mean * mean
         if (sqrt(variance.coerceAtLeast(0.0)) < 9.0 && colorful < 4) return null
 
-        val scaled = Bitmap.createScaledBitmap(bitmap, 9, 8, true)
+        val squareSide = minOf(bitmap.width, bitmap.height)
+        val squareLeft = (bitmap.width - squareSide) / 2
+        val squareTop = (bitmap.height - squareSide) / 2
+        val square = Bitmap.createBitmap(bitmap, squareLeft, squareTop, squareSide, squareSide)
+        val scaled = Bitmap.createScaledBitmap(square, 9, 8, true)
+        square.recycle()
         try {
             var hash = 0L
             var bit = 0
@@ -329,7 +364,7 @@ class StickerCatalogScanner(context: Context) {
         private const val GRID_START_X = 0.247f
         private const val GRID_STEP_X = 0.185f
         private const val GRID_CARD_WIDTH = 0.18f
-        private const val GRID_IMAGE_TOP = 0.135f
+        private const val GRID_IMAGE_HEIGHT = 0.29f
         private const val OFFER_TOP = 0.40f
         private const val OFFER_BOTTOM = 0.82f
         private const val ICON_REGION_WIDTH = 0.155f

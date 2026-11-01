@@ -3,6 +3,7 @@ package com.selteck.so2project.automation
 import android.graphics.Bitmap
 import android.os.SystemClock
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Screen-driven navigation for the visible market UI.
@@ -30,6 +31,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     private var discoveredOffers = 0
     private var isInspectingDeal = false
     private var pendingPurchase: PendingPurchase? = null
+    private var baseSkinPrice: Double? = null
 
     private data class PendingPurchase(
         val itemName: String,
@@ -104,8 +106,18 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                                 normalized.contains(OcrPage.normalize(AutomationBridge.selectedSkin))
                         }
                     if (targetLine != null && canAct()) {
-                        tapLine(page, targetLine, "Открываю " + target)
-                        phase = Phase.OPEN_ITEM
+                        val capturedPrice = findCardPrice(page, targetLine)
+                        if (capturedPrice == null || capturedPrice <= 0.0) {
+                            pause("Не удалось надёжно прочитать базовую цену выбранного скина. Покупки отключены.")
+                        } else {
+                            baseSkinPrice = capturedPrice
+                            tapLine(
+                                page,
+                                targetLine,
+                                "Открываю " + target + " · базовая цена " + String.format("%.2f", capturedPrice) + " G"
+                            )
+                            phase = Phase.OPEN_ITEM
+                        }
                     } else {
                         AutomationBridge.update(status = "Ищу лот " + target + " в результатах рынка")
                     }
@@ -140,6 +152,22 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
             Phase.WATCH_ACTIVITY -> watchRecentActivity(page, reading, bitmap)
             else -> Unit
         }
+    }
+
+    private fun findCardPrice(page: OcrPage, title: OcrLine): Double? {
+        val normalizedX = title.bounds.centerX().toFloat() / page.width
+        val column = (((normalizedX - GRID_START_X) / GRID_STEP_X).roundToInt()).coerceIn(0, 3)
+        val left = (page.width * (GRID_START_X + column * GRID_STEP_X)).toInt()
+        val right = (left + page.width * GRID_CARD_WIDTH).toInt()
+
+        return page.locatedPrices
+            .filter { located ->
+                located.bounds.centerX() in left..right &&
+                    located.bounds.centerY() > title.bounds.bottom &&
+                    located.bounds.centerY() - title.bounds.bottom < page.height * 0.12f
+            }
+            .minByOrNull { it.bounds.centerY() }
+            ?.value
     }
 
     private fun configureMonitorFilters(page: OcrPage, target: String) {
@@ -292,10 +320,17 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
 
         isInspectingDeal = true
         actionStatus("Новое выставление за " + String.format("%.2f", price) + " G. Проверяю три нижних лота…")
+        val basePrice = baseSkinPrice
+        if (basePrice == null || basePrice <= 0.0) {
+            isInspectingDeal = false
+            actionStatus("Не сохранена базовая цена обычного скина. Лот пропускаю.")
+            return
+        }
         service.catalogScanner.inspectCandidateRowsAsync(
             screen = bitmap,
             page = page,
             candidatePrice = price,
+            cheapestBaseSkinPrice = basePrice,
             configuredMinStickerPrice = AutomationBridge.minStickerPrice,
             minimumProfit = AutomationBridge.minProfit
         ) { inspections ->
@@ -410,5 +445,8 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     companion object {
         private const val ACTION_COOLDOWN_MS = 1300L
         private const val MAX_CATALOG_PAGES = 80
+        private const val GRID_START_X = 0.247f
+        private const val GRID_STEP_X = 0.185f
+        private const val GRID_CARD_WIDTH = 0.18f
     }
 }

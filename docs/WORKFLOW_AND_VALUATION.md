@@ -1,47 +1,51 @@
 # Market workflow and valuation rules
 
-## Interpreted navigation
-1. Find the installed Standoff 2 app by launcher label.
-2. Choose weapon, original skin name, and Regular or StatTrack.
-3. Open Market, open Filter, select Weapons and the Stickers filter, enter \`WEAPON "SKIN"\`, choose category, then Apply.
-4. Open the matching skin and enable "With stickers".
-5. Watch the recent-activity area for new listing events and extract the gold price.
-6. If several matching listings share a price, inspect the three requested lowest/nearest rows.
-7. Match sticker icon variants against local catalog references, then estimate profit.
-8. Before a future automated purchase, re-check item and exact price on the confirmation dialog.
-9. On insufficient balance, save a screenshot and stop. Locking the screen is not powering off the phone.
+## Navigation
 
-## OCR
-The game screenshots contain Russian UI text as well as English weapon and sticker names. The app uses Tesseract4Android with Russian and English trained-data files. These are downloaded once into app-private storage. OCR text is only one signal; sticker-icon variants must also be compared visually.
+1. Find Standoff 2 on the device and start it.
+2. Choose the weapon, original skin name and Regular/StatTrack category.
+3. Open Market and Filter; reset filters, retain the Weapons item type, select the requested category, enter \`WEAPON "SKIN"\`, and Apply.
+4. Read the selected skin's base market price from its result card before opening it.
+5. Open the listing and enable “С наклейками”.
+6. Watch the bottom recent-activity panel for a new listing action and parse the gold price.
+7. For matching offers at that price, inspect the three lowest visible rows.
+8. Match each offer sticker icon with the local catalogue; an unknown icon rejects that row.
+9. Calculate profit using the base price from the ordinary skin result card (not the sticker-offer prices).
+10. Only a profitable row proceeds to Buy. The purchase modal must contain the exact selected item and exact price.
+11. If insufficient gold is reported, save a screenshot, stop monitoring and lock the screen. A generic error is dismissed only if its OK button is found; otherwise automation pauses.
 
-## Profit calculation (matches the numeric example)
+## Profit example
+
 - Cheapest base-skin lot: 100 G.
 - One qualifying sticker: 1000 G; three other stickers: 50 G each.
 - Candidate purchase price: 200 G.
-- Count only stickers >= 500 G.
-- 1000 * 20% = 200 G sticker credit.
-- (100 + 200) * 80% = 240 G.
-- 240 - 25 = 215 G.
-- 215 - 200 = 15 G estimated profit.
-- Accept when profit >= configured minimum, default 10 G.
+- Count sticker prices >= 500 G.
+- Sticker credit: 1000 * 20% = 200 G.
+- Adjusted resale estimate: (100 + 200) * 80% = 240 G.
+- Fixed costs: 240 - 25 = 215 G.
+- Profit: 215 - 200 = 15 G.
+- Accept when profit >= configured minimum (default 10 G).
 
-The phrase "subtract 85%" conflicts with the worked example. The code follows the example: 20% credit.
+The prose “subtract 85%” conflicts with the numeric 1000 -> 200 example; the implementation follows the example with 20% credit.
 
-## Catalog records
-Each sticker stores exact title, observed market price, visual variant, local image path, visual hash and update time. Near-identical holographic variants require saved image crops; text recognition alone is insufficient.
+## Catalogue
 
-## Supplied screenshot map
-- foto1: main menu; pistol icon = inventory, cart = market.
+Sticker rows store the recognised title, price, local image path, image fingerprint and visual variant. Offer-row matching compares both the shape fingerprint and average colour. If the same-looking variants are too close for a confident comparison, the item is skipped. The user-configured sticker minimum is separate from the 500 G threshold used by the example's resale formula.
+
+## Screens supplied
+
+- foto1: main menu; pistol icon opens inventory, shopping-cart icon opens Market.
 - foto2: inventory.
-- foto3: market; price sort, Filter and History.
-- foto4: filter; Weapons, Stickers, name field, Regular/Pattern/StatTrack, Reset and Apply.
-- foto5: filtered item cards with title and price.
-- foto6-foto7: item offers; With stickers toggle, sticker icons, Buy buttons, scroll bar and recent activity.
-- foto8: purchase confirmation dialog.
-- foto9: insufficient gold page.
-- foto10: item inspection/3D view with back button.
-- foto11: generic error dialog; dismiss with OK.
-- foto12: market History, Sales History.
+- foto3: Market: price sorting, Filter and History.
+- foto4: Filter: item type, rarity, collection, category, name field, Reset and Apply.
+- foto5: result cards with weapon name and base price.
+- foto6-foto7: item offer rows, sticker toggle, sticker icons, buy buttons and bottom recent-activity panel.
+- foto8: purchase confirmation modal; it can report insufficient funds.
+- foto9: top-up page after insufficient gold.
+- foto10: item inspection/3D view.
+- foto11: generic error dialog with OK.
+- foto12: History / Sales History.
 
-## Preconditions before unattended buying
-Require exact weapon/skin/category, a newly appeared listing event, reliable price parsing, sticker-variant match, profit threshold, sufficient balance, and a confirmation dialog matching the same item and price. On unknown screen, OCR conflict or generic error, stop rather than tap Buy.
+## Failure-safe rules
+
+On a new candidate, check the activity event, price, item context, base price, sticker icons and profit. Do not use a price from the sticker-offer list as the base skin price. On unknown screen, OCR uncertainty, unrecognised icons, missing price or mismatched purchase modal, do not confirm a purchase.
