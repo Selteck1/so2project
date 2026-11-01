@@ -28,6 +28,14 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     private var catalogStalePages = 0
     private var catalogPageCount = 0
     private var discoveredOffers = 0
+    private var isInspectingDeal = false
+    private var pendingPurchase: PendingPurchase? = null
+
+    private data class PendingPurchase(
+        val itemName: String,
+        val price: Double,
+        val rowCenterY: Int
+    )
 
     fun onFrame(page: OcrPage, bitmap: Bitmap) {
         if (!AutomationBridge.monitoringRequested || phase == Phase.PAUSED) return
@@ -51,7 +59,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                 return
             }
             ScreenKind.PURCHASE_CONFIRM -> {
-                pause("Появилось подтверждение покупки. Покупка не нажимается без отдельной проверки лота.")
+                confirmPurchase(page)
                 return
             }
             else -> Unit
@@ -129,7 +137,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                     AutomationBridge.update(status = "Ожидаю список предложений по " + target)
                 }
             }
-            Phase.WATCH_ACTIVITY -> watchRecentActivity(page, reading)
+            Phase.WATCH_ACTIVITY -> watchRecentActivity(page, reading, bitmap)
             else -> Unit
         }
     }
@@ -262,10 +270,16 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         }
     }
 
-    private fun watchRecentActivity(page: OcrPage, reading: ScreenReading) {
+    private fun watchRecentActivity(
+        page: OcrPage,
+        reading: ScreenReading,
+        bitmap: Bitmap
+    ) {
+        if (isInspectingDeal) return
         val activity = reading.recentActivityLines.firstOrNull {
             !it.text.contains("не было последних действий", ignoreCase = true)
         } ?: return
+
         val signature = activity.text.trim()
         if (signature == lastActivitySignature) return
         lastActivitySignature = signature
@@ -276,16 +290,95 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
             return
         }
 
-        val candidates = reading.locatedPrices.filter { located ->
-            located.line.bounds.centerY() in
-                (page.height * 0.40f).toInt()..(page.height * 0.82f).toInt() &&
-                abs(located.value - price) < 0.005
+        isInspectingDeal = true
+        actionStatus("Новое выставление за " + String.format("%.2f", price) + " G. Проверяю три нижних лота…")
+        service.catalogScanner.inspectCandidateRowsAsync(
+            screen = bitmap,
+            page = page,
+            candidatePrice = price,
+            configuredMinStickerPrice = AutomationBridge.minStickerPrice,
+            minimumProfit = AutomationBridge.minProfit
+        ) { inspections ->
+            isInspectingDeal = false
+            if (!AutomationBridge.monitoringRequested || phase == Phase.PAUSED) return@inspectCandidateRowsAsync
+
+            val profitable = inspections.firstOrNull { it.shouldBuy }
+            if (profitable == null) {
+                val best = inspections.maxByOrNull { it.estimatedProfit }
+                actionStatus(
+                    if (best == null) {
+                        "Лоты за " + String.format("%.2f", price) + " G не удалось надёжно сопоставить с базой. Пропускаю."
+                    } else {
+                        "Окуп не подтверждён: расчёт " + String.format("%.2f", best.estimatedProfit) +
+                            " G; неизвестных иконок: " + best.unknownIconCount + ". Пропускаю."
+                    }
+                )
+                return@inspectCandidateRowsAsync
+            }
+
+            val buyWord = page.words
+                .filter {
+                    val word = OcrPage.normalize(it.text)
+                    word == "купить" || word == "buy"
+                }
+                .minByOrNull { kotlin.math.abs(it.bounds.centerY() - profitable.centerY) }
+
+            if (buyWord == null || !canAct()) {
+                actionStatus("Окуп подтверждён, но кнопка покупки в этой строке не распознана. Пропускаю.")
+                return@inspectCandidateRowsAsync
+            }
+
+            pendingPurchase = PendingPurchase(targetName(), profitable.price, profitable.centerY)
+            service.tapNormalized(
+                buyWord.bounds.centerX().toFloat() / page.width,
+                buyWord.bounds.centerY().toFloat() / page.height
+            )
+            phase = Phase.WATCH_ACTIVITY
+            actionStatus(
+                "Окуп найден: прибыль " + String.format("%.2f", profitable.estimatedProfit) +
+                    " G. Проверяю диалог подтверждения для " + targetName() + "."
+            )
         }
-        discoveredOffers += candidates.size
-        actionStatus(
-            "Новое действие за " + String.format("%.2f", price) + " G. " +
-                "Совпадающих предложений на экране: " + candidates.size + ". Проверяю без покупки."
-        )
+    }
+
+    private fun confirmPurchase(page: OcrPage) {
+        val expected = pendingPurchase
+        if (expected == null) {
+            pause("Появилось неподтверждённое окно покупки. Ничего не нажимаю.")
+            return
+        }
+
+        val normalizedText = OcrPage.normalize(page.fullText)
+        if (!normalizedText.contains(OcrPage.normalize(expected.itemName))) {
+            pause("Название в окне покупки не совпало с выбранным скином. Покупка отменена.")
+            return
+        }
+
+        val matchingPrice = ScreenClassifier.extractPrices(page.fullText)
+            .any { kotlin.math.abs(it - expected.price) < 0.005 }
+        if (!matchingPrice) {
+            pause("Цена в окне покупки не совпала с найденным лотом. Покупка отменена.")
+            return
+        }
+
+        val buyLine = page.lines
+            .filter { OcrPage.normalize(it.text).contains("купить") }
+            .filter {
+                it.bounds.centerY() > page.height * 0.62f &&
+                    it.bounds.centerX() in (page.width * 0.32f).toInt()..(page.width * 0.68f).toInt()
+            }
+            .minByOrNull { kotlin.math.abs(it.bounds.centerY() - page.height * 0.74f) }
+
+        if (buyLine == null) {
+            pause("Не нашёл кнопку подтверждения покупки в ожидаемом окне. Покупка отменена.")
+            return
+        }
+
+        if (canAct()) {
+            tapLine(page, buyLine, "Подтверждаю совпавший лот за " + String.format("%.2f", expected.price) + " G")
+            pendingPurchase = null
+            phase = Phase.WATCH_ACTIVITY
+        }
     }
 
     private fun tapLine(page: OcrPage, line: OcrLine, message: String) {
