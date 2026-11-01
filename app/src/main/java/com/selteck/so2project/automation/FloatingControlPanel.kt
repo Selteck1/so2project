@@ -94,10 +94,7 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
 
         val secondRow = LinearLayout(service).apply { orientation = LinearLayout.HORIZONTAL }
         secondRow.addView(makeButton("СКРИН") {
-            val result = service.saveLastScreenshot()
-            AutomationBridge.update(
-                status = result?.let { "Снимок сохранён: $it" } ?: "Пока нет готового снимка экрана."
-            )
+            service.captureCleanScreenshot()
         }, weightedButton())
         secondRow.addView(makeButton("ПРОСМОТР") {
             detailsVisible = !detailsVisible
@@ -133,6 +130,14 @@ class FloatingControlPanel(private val service: So2AccessibilityService) {
 
         windowManager.addView(panel, params)
         refreshButtons()
+    }
+
+    fun setVisible(visible: Boolean) {
+        val view = root ?: return
+        runCatching {
+            if (visible && view.parent == null) windowManager.addView(view, params)
+            else if (!visible && view.parent != null) windowManager.removeView(view)
+        }
     }
 
     fun update(status: String, bitmap: Bitmap?, ocrText: String?) {
