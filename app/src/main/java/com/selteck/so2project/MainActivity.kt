@@ -185,7 +185,7 @@ private fun So2App(
 
                 when (page) {
                     Page.HOME -> {
-                        StatusCard(accessibilityEnabled, statusMessage, monitorState.lastScreen)
+                        StatusCard(accessibilityEnabled, statusMessage + "\n" + monitorState.status, monitorState.lastScreen)
                         Spacer(Modifier.height(16.dp))
                         Button(
                             onClick = {
@@ -209,6 +209,17 @@ private fun So2App(
                             modifier = Modifier.fillMaxWidth().height(54.dp)
                         ) {
                             Text("ЗАПОЛНИТЬ БАЗУ ДАННЫХ")
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = {
+                                AutomationBridge.monitoringRequested = false
+                                statusMessage = "Мониторинг остановлен пользователем"
+                            },
+                            enabled = AutomationBridge.monitoringRequested,
+                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                        ) {
+                            Text("ОСТАНОВИТЬ МОНИТОРИНГ")
                         }
                         Spacer(Modifier.height(12.dp))
                         Text(

@@ -3,7 +3,7 @@
 ## Interpreted navigation
 1. Find the installed Standoff 2 app by launcher label.
 2. Choose weapon, original skin name, and Regular or StatTrack.
-3. Open Market, open Filter, select Weapons and stickers, enter \`WEAPON "SKIN"\`, select category, then Apply.
+3. Open Market, open Filter, select Weapons and the Stickers filter, enter \`WEAPON "SKIN"\`, choose category, then Apply.
 4. Open the matching skin and enable "With stickers".
 5. Watch the recent-activity area for new listing events and extract the gold price.
 6. If several matching listings share a price, inspect the three requested lowest/nearest rows.
@@ -11,7 +11,10 @@
 8. Before a future automated purchase, re-check item and exact price on the confirmation dialog.
 9. On insufficient balance, save a screenshot and stop. Locking the screen is not powering off the phone.
 
-## Example calculation
+## OCR
+The game screenshots contain Russian UI text as well as English weapon and sticker names. The app uses Tesseract4Android with Russian and English trained-data files. These are downloaded once into app-private storage. OCR text is only one signal; sticker-icon variants must also be compared visually.
+
+## Profit calculation (matches the numeric example)
 - Cheapest base-skin lot: 100 G.
 - One qualifying sticker: 1000 G; three other stickers: 50 G each.
 - Candidate purchase price: 200 G.
@@ -22,7 +25,7 @@
 - 215 - 200 = 15 G estimated profit.
 - Accept when profit >= configured minimum, default 10 G.
 
-The phrase "subtract 85%" conflicts with the worked example. The code uses 20% credit because that reproduces 1000 -> 200.
+The phrase "subtract 85%" conflicts with the worked example. The code follows the example: 20% credit.
 
 ## Catalog records
 Each sticker stores exact title, observed market price, visual variant, local image path, visual hash and update time. Near-identical holographic variants require saved image crops; text recognition alone is insufficient.
@@ -30,10 +33,10 @@ Each sticker stores exact title, observed market price, visual variant, local im
 ## Supplied screenshot map
 - foto1: main menu; pistol icon = inventory, cart = market.
 - foto2: inventory.
-- foto3: market; sorting by price, Filter and History.
+- foto3: market; price sort, Filter and History.
 - foto4: filter; Weapons, Stickers, name field, Regular/Pattern/StatTrack, Reset and Apply.
-- foto5: result list; item cards show title and price.
-- foto6-foto7: item offers; With stickers toggle, sticker icons, Buy buttons, scroll and recent activity.
+- foto5: filtered item cards with title and price.
+- foto6-foto7: item offers; With stickers toggle, sticker icons, Buy buttons, scroll bar and recent activity.
 - foto8: purchase confirmation dialog.
 - foto9: insufficient gold page.
 - foto10: item inspection/3D view with back button.
