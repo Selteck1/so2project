@@ -275,7 +275,7 @@ class StickerCatalogScanner(context: Context) {
         }
     }
 
-    private fun calculateFingerprint(bitmap: Bitmap): String? {
+    fun calculateFingerprint(bitmap: Bitmap): String? {
         if (bitmap.width < 5 || bitmap.height < 5) return null
 
         var sum = 0.0
