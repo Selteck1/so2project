@@ -18,8 +18,10 @@ object ScreenClassifier {
     fun classify(rawText: String): ScreenReading {
         val text = rawText.lowercase()
         val kind = when {
-            "недостаточно средств" in text || "insufficient funds" in text ||
-                ("недостаточно" in text && "голд" in text) -> ScreenKind.LOW_BALANCE
+            "недостаточно средств" in text ||
+                "insufficient funds" in text ||
+                ("недостаточно" in text && ("голд" in text || "пополните" in text || "баланс" in text)) ->
+                ScreenKind.LOW_BALANCE
             "ошибка" in text || Regex("""\berror\b""").containsMatchIn(text) -> ScreenKind.ERROR_DIALOG
             "подтвердите покупку" in text || "confirm purchase" in text -> ScreenKind.PURCHASE_CONFIRM
             "история продаж" in text || "история покупок" in text -> ScreenKind.HISTORY
