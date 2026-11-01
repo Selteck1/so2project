@@ -436,9 +436,8 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
             }
 
             Phase.CATALOG_OPEN_ITEM -> {
-                val leftGrid = reading.kind != ScreenKind.MARKET_GRID &&
-                    !page.fullText.contains("Sticker", ignoreCase = true)
-                if (leftGrid || reading.kind == ScreenKind.ITEM_DETAIL ||
+                if (reading.kind != ScreenKind.MARKET_GRID ||
+                    reading.kind == ScreenKind.ITEM_DETAIL ||
                     reading.kind == ScreenKind.OFFERS
                 ) {
                     val returned = service.goBack()
