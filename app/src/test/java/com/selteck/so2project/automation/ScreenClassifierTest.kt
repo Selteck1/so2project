@@ -14,11 +14,11 @@ class ScreenClassifierTest {
     }
 
     @Test
-    fun lowBalanceTakesPriorityOverPurchaseDialog() {
+    fun insufficientFundsInsidePurchaseModalRemainsPurchaseConfirmation() {
         val result = ScreenClassifier.classify(
             "Покупка. Подтвердите покупку данного предмета за 127475.00 G. Недостаточно средств"
         )
-        assertEquals(ScreenKind.LOW_BALANCE, result.kind)
+        assertEquals(ScreenKind.PURCHASE_CONFIRM, result.kind)
         assertEquals(listOf(127475.00), result.prices)
     }
 
