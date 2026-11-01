@@ -170,10 +170,11 @@ class So2AccessibilityService : AccessibilityService() {
     }
 
     fun tapNormalized(xRatio: Float, yRatio: Float, durationMs: Long = 70L): Boolean {
-        val width = (lastScreenshotWidth.takeIf { it > 0 }
-            ?: resources.displayMetrics.widthPixels).toFloat()
-        val height = (lastScreenshotHeight.takeIf { it > 0 }
-            ?: resources.displayMetrics.heightPixels).toFloat()
+        // GestureDescription uses the active display coordinate space. Screenshot
+        // buffers may report a different backing size, so preserve normalized
+        // positions but scale them to the current display metrics.
+        val width = resources.displayMetrics.widthPixels.toFloat().coerceAtLeast(1f)
+        val height = resources.displayMetrics.heightPixels.toFloat().coerceAtLeast(1f)
         val x = (width * xRatio).coerceIn(0f, width - 1f)
         val y = (height * yRatio).coerceIn(0f, height - 1f)
         val path = Path().apply { moveTo(x, y) }
@@ -196,10 +197,8 @@ class So2AccessibilityService : AccessibilityService() {
         endY: Float,
         durationMs: Long = 420L
     ): Boolean {
-        val width = (lastScreenshotWidth.takeIf { it > 0 }
-            ?: resources.displayMetrics.widthPixels).toFloat()
-        val height = (lastScreenshotHeight.takeIf { it > 0 }
-            ?: resources.displayMetrics.heightPixels).toFloat()
+        val width = resources.displayMetrics.widthPixels.toFloat().coerceAtLeast(1f)
+        val height = resources.displayMetrics.heightPixels.toFloat().coerceAtLeast(1f)
         val path = Path().apply {
             moveTo(width * startX.coerceIn(0f, 1f), height * startY.coerceIn(0f, 1f))
             lineTo(width * endX.coerceIn(0f, 1f), height * endY.coerceIn(0f, 1f))
