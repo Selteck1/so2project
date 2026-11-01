@@ -110,7 +110,11 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                 } else if (reading.kind == ScreenKind.MARKET_HOME) {
                     val filter = page.findLineContaining("Фильтр")
                     if (filter != null && canAct()) {
-                        service.tapConfigured("market_filter", 0.035f, 0.36f)
+                        service.tapAnchorConfigured(
+                            "market_filter",
+                            filter.bounds.centerX().toFloat() / page.width,
+                            filter.bounds.centerY().toFloat() / page.height
+                        )
                         actionStatus("Открываю фильтры рынка")
                         phase = Phase.CONFIGURE_FILTER
                         resetDone = false
