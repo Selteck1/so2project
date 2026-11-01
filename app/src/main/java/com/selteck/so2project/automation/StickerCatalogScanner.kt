@@ -24,6 +24,8 @@ data class StickerIconMatch(
     val confidence: Double
 )
 
+data class StickerIconCenter(val slot: Int, val x: Int, val y: Int)
+
 data class OfferRowInspection(
     val price: Double,
     val centerY: Int,
@@ -31,7 +33,8 @@ data class OfferRowInspection(
     val unknownIconCount: Int,
     val allIconsRecognized: Boolean,
     val estimatedProfit: Double,
-    val shouldBuy: Boolean
+    val shouldBuy: Boolean,
+    val stickerCenters: List<StickerIconCenter> = emptyList()
 )
 
 class StickerCatalogScanner(context: Context) {
@@ -196,14 +199,16 @@ class StickerCatalogScanner(context: Context) {
             val matches = mutableListOf<StickerIconMatch>()
             var unknownCount = 0
             var visibleIconCount = 0
+            val stickerCenters = mutableListOf<StickerIconCenter>()
 
-            for (cell in iconCells(screen, located.bounds)) {
+            for ((slotIndex, cell) in iconCells(screen, located.bounds).withIndex()) {
                 val crop = runCatching {
                     Bitmap.createBitmap(screen, cell.left, cell.top, cell.width(), cell.height())
                 }.getOrNull() ?: continue
                 try {
                     val fingerprint = calculateFingerprint(crop) ?: continue
                     visibleIconCount += 1
+                    stickerCenters += StickerIconCenter(slotIndex, cell.centerX(), cell.centerY())
                     val ranked = records.mapNotNull { record ->
                         val saved = record.visualHash ?: return@mapNotNull null
                         compareFingerprints(fingerprint, saved)?.let { confidence ->
@@ -249,7 +254,8 @@ class StickerCatalogScanner(context: Context) {
                 unknownIconCount = unknownCount,
                 allIconsRecognized = recognized,
                 estimatedProfit = profit.estimatedProfit,
-                shouldBuy = recognized && hasConfiguredSticker && profit.shouldBuy
+                shouldBuy = recognized && hasConfiguredSticker && profit.shouldBuy,
+                stickerCenters = stickerCenters
             )
         }
     }
