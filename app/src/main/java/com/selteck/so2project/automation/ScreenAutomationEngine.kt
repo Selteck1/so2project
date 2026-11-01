@@ -425,7 +425,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                 val leftGrid = reading.kind != ScreenKind.MARKET_GRID &&
                     !page.fullText.contains("Sticker", ignoreCase = true)
                 if (leftGrid || reading.kind == ScreenKind.ITEM_DETAIL ||
-                    reading.kind == ScreenKind.OFFERS || reading.kind == ScreenKind.UNKNOWN
+                    reading.kind == ScreenKind.OFFERS
                 ) {
                     val returned = service.goBack()
                     phase = Phase.CATALOG_WAIT_GRID
@@ -443,9 +443,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
             }
 
             Phase.CATALOG_WAIT_GRID -> {
-                if (reading.kind == ScreenKind.MARKET_GRID ||
-                    page.fullText.contains("Sticker", ignoreCase = true)
-                ) {
+                if (reading.kind == ScreenKind.MARKET_GRID) {
                     phase = Phase.CATALOG_SCAN
                     catalogPendingTitle = null
                     actionStatus("Вернулся к списку. Открываю следующую наклейку.")
