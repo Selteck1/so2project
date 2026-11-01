@@ -65,7 +65,7 @@ private val weapons = listOf(
     "SPAS-12", "M60", "AWM", "M40", "M110"
 )
 
-private enum class Page { HOME, CONFIG, DATABASE, SETTINGS }
+private enum class Page { HOME, CONFIG, DATABASE, SETTINGS, COORDINATES, ADD_STICKER, GUIDE }
 
 class MainActivity : ComponentActivity() {
     private var accessibilityEnabled by mutableStateOf(false)
@@ -177,6 +177,9 @@ private fun So2App(
                         Page.CONFIG -> "Настройка поиска"
                         Page.DATABASE -> "База наклеек"
                         Page.SETTINGS -> "Настройки"
+                        Page.COORDINATES -> "Калибровка касаний"
+                        Page.ADD_STICKER -> "Добавить наклейку"
+                        Page.GUIDE -> "Пошаговая инструкция"
                     },
                     fontSize = 27.sp,
                     fontWeight = FontWeight.Bold,
@@ -319,6 +322,15 @@ private fun So2App(
                             fontSize = 12.sp,
                             modifier = Modifier.padding(top = 10.dp)
                         )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { page = Page.ADD_STICKER },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("ДОБАВИТЬ НАКЛЕЙКУ ВРУЧНУЮ") }
+                        OutlinedButton(
+                            onClick = { page = Page.GUIDE },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("КАК РАБОТАЕТ СБОР БАЗЫ") }
                     }
 
                     Page.SETTINGS -> {
@@ -332,6 +344,27 @@ private fun So2App(
                             fontSize = 13.sp,
                             modifier = Modifier.padding(top = 10.dp)
                         )
+                        Spacer(Modifier.height(14.dp))
+                        OutlinedButton(
+                            onClick = { page = Page.COORDINATES },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("НАСТРОИТЬ КООРДИНАТЫ КНОПОК") }
+                        OutlinedButton(
+                            onClick = { page = Page.GUIDE },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("ПОШАГОВАЯ ИНСТРУКЦИЯ СО СКРИНШОТАМИ") }
+                    }
+
+                    Page.COORDINATES -> CoordinatesContent(context) {
+                        page = Page.SETTINGS
+                    }
+
+                    Page.ADD_STICKER -> ManualStickerContent(context) {
+                        page = Page.DATABASE
+                    }
+
+                    Page.GUIDE -> GuideContent {
+                        page = Page.HOME
                     }
                 }
 
