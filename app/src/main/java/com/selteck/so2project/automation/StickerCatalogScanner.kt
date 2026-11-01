@@ -204,15 +204,26 @@ class StickerCatalogScanner(context: Context) {
                 try {
                     val fingerprint = calculateFingerprint(crop) ?: continue
                     visibleIconCount += 1
-                    val best = records.mapNotNull { record ->
+                    val ranked = records.mapNotNull { record ->
                         val saved = record.visualHash ?: return@mapNotNull null
-                        compareFingerprints(fingerprint, saved)?.let {
-                            StickerIconMatch(record.name, record.marketPrice, it)
+                        compareFingerprints(fingerprint, saved)?.let { confidence ->
+                            record to confidence
                         }
-                    }.maxByOrNull { it.confidence }
+                    }.sortedByDescending { it.second }
 
-                    if (best != null && best.confidence >= MATCH_THRESHOLD) {
-                        matches += best
+                    val best = ranked.firstOrNull()
+                    val second = ranked.getOrNull(1)
+                    val ambiguous = best != null && second != null &&
+                        (best.first.name != second.first.name ||
+                            best.first.visualVariant != second.first.visualVariant) &&
+                        (best.second - second.second) < MIN_MATCH_MARGIN
+
+                    if (best != null && best.second >= MATCH_THRESHOLD && !ambiguous) {
+                        matches += StickerIconMatch(
+                            best.first.name,
+                            best.first.marketPrice,
+                            best.second
+                        )
                     } else {
                         unknownCount += 1
                     }
@@ -266,6 +277,7 @@ class StickerCatalogScanner(context: Context) {
 
     private fun calculateFingerprint(bitmap: Bitmap): String? {
         if (bitmap.width < 5 || bitmap.height < 5) return null
+
         var sum = 0.0
         var sumSquare = 0.0
         var sampleCount = 0
@@ -290,64 +302,107 @@ class StickerCatalogScanner(context: Context) {
         val variance = (sumSquare / sampleCount) - mean * mean
         if (sqrt(variance.coerceAtLeast(0.0)) < 9.0 && colorful < 4) return null
 
-        val squareSide = minOf(bitmap.width, bitmap.height)
-        val squareLeft = (bitmap.width - squareSide) / 2
-        val squareTop = (bitmap.height - squareSide) / 2
-        val square = Bitmap.createBitmap(bitmap, squareLeft, squareTop, squareSide, squareSide)
-        val scaled = Bitmap.createScaledBitmap(square, 9, 8, true)
+        val side = minOf(bitmap.width, bitmap.height)
+        val square = Bitmap.createBitmap(
+            bitmap,
+            (bitmap.width - side) / 2,
+            (bitmap.height - side) / 2,
+            side,
+            side
+        )
+        val hashBitmap = Bitmap.createScaledBitmap(square, 9, 8, true)
+        val colorBitmap = Bitmap.createScaledBitmap(square, 32, 32, true)
         square.recycle()
+
         try {
             var hash = 0L
             var bit = 0
             for (y in 0 until 8) {
                 for (x in 0 until 8) {
-                    val left = scaled.getPixel(x, y)
-                    val right = scaled.getPixel(x + 1, y)
+                    val left = hashBitmap.getPixel(x, y)
+                    val right = hashBitmap.getPixel(x + 1, y)
                     val grayLeft = (Color.red(left) * 299 + Color.green(left) * 587 + Color.blue(left) * 114) / 1000
                     val grayRight = (Color.red(right) * 299 + Color.green(right) * 587 + Color.blue(right) * 114) / 1000
                     if (grayLeft > grayRight) hash = hash or (1L shl bit)
                     bit += 1
                 }
             }
-            var red = 0L
-            var green = 0L
-            var blue = 0L
-            var count = 0L
-            for (y in 0 until scaled.height) {
-                for (x in 0 until scaled.width) {
-                    val pixel = scaled.getPixel(x, y)
-                    red += Color.red(pixel)
-                    green += Color.green(pixel)
-                    blue += Color.blue(pixel)
-                    count += 1
+
+            // 4x4 spatial colour grid retains holographic/gradient placement, not only average hue.
+            val colourGrid = StringBuilder(16 * 6)
+            for (cellY in 0 until COLOUR_GRID_SIZE) {
+                for (cellX in 0 until COLOUR_GRID_SIZE) {
+                    var red = 0L
+                    var green = 0L
+                    var blue = 0L
+                    var count = 0L
+                    val startX = cellX * COLOUR_CELL_SIZE
+                    val startY = cellY * COLOUR_CELL_SIZE
+                    for (y in startY until startY + COLOUR_CELL_SIZE) {
+                        for (x in startX until startX + COLOUR_CELL_SIZE) {
+                            val pixel = colorBitmap.getPixel(x, y)
+                            red += Color.red(pixel)
+                            green += Color.green(pixel)
+                            blue += Color.blue(pixel)
+                            count += 1
+                        }
+                    }
+                    colourGrid.append(
+                        "%02x%02x%02x".format(red / count, green / count, blue / count)
+                    )
                 }
             }
-            return "%016x-%02x%02x%02x".format(hash, red / count, green / count, blue / count)
+            return "%016x-%s".format(hash, colourGrid.toString())
         } finally {
-            scaled.recycle()
+            hashBitmap.recycle()
+            colorBitmap.recycle()
         }
     }
 
     private fun compareFingerprints(first: String, second: String): Double? {
         val a = first.split('-')
         val b = second.split('-')
-        if (a.size != 2 || b.size != 2 || a[1].length != 6 || b[1].length != 6) return null
+        if (a.size != 2 || b.size != 2) return null
+
         val hashA = runCatching { a[0].toULong(16).toLong() }.getOrNull() ?: return null
         val hashB = runCatching { b[0].toULong(16).toLong() }.getOrNull() ?: return null
+        val colourA = parseColourGrid(a[1]) ?: return null
+        val colourB = parseColourGrid(b[1]) ?: return null
+        if (colourA.size != colourB.size) return null
+
         val hamming = java.lang.Long.bitCount(hashA xor hashB)
-        val colorA = parseRgb(a[1]) ?: return null
-        val colorB = parseRgb(b[1]) ?: return null
-        val distance = sqrt(
-            (colorA[0] - colorB[0]) * (colorA[0] - colorB[0]) +
-                (colorA[1] - colorB[1]) * (colorA[1] - colorB[1]) +
-                (colorA[2] - colorB[2]) * (colorA[2] - colorB[2])
-        )
+        var colourDistanceTotal = 0.0
+        for (index in colourA.indices) {
+            val left = colourA[index]
+            val right = colourB[index]
+            colourDistanceTotal += sqrt(
+                (left[0] - right[0]) * (left[0] - right[0]) +
+                    (left[1] - right[1]) * (left[1] - right[1]) +
+                    (left[2] - right[2]) * (left[2] - right[2])
+            )
+        }
+        val averageColourDistance = colourDistanceTotal / colourA.size
         val shapeScore = 1.0 - hamming / 64.0
-        val colorScore = 1.0 - (distance / 441.673).coerceIn(0.0, 1.0)
-        return shapeScore * 0.72 + colorScore * 0.28
+        val colourScore = 1.0 - (averageColourDistance / 441.673).coerceIn(0.0, 1.0)
+        return shapeScore * 0.55 + colourScore * 0.45
     }
 
-    private fun parseRgb(value: String): DoubleArray? {
+    private fun parseColourGrid(value: String): List<DoubleArray>? {
+        return when (value.length) {
+            6 -> {
+                val one = parseRgbCell(value) ?: return null
+                List(COLOUR_GRID_SIZE * COLOUR_GRID_SIZE) { one }
+            }
+            COLOUR_GRID_SIZE * COLOUR_GRID_SIZE * 6 -> {
+                (0 until COLOUR_GRID_SIZE * COLOUR_GRID_SIZE).map { index ->
+                    parseRgbCell(value.substring(index * 6, index * 6 + 6)) ?: return null
+                }
+            }
+            else -> null
+        }
+    }
+
+    private fun parseRgbCell(value: String): DoubleArray? {
         if (value.length != 6) return null
         return try {
             doubleArrayOf(
@@ -367,9 +422,12 @@ class StickerCatalogScanner(context: Context) {
         private const val GRID_IMAGE_HEIGHT = 0.22f
         private const val OFFER_TOP = 0.40f
         private const val OFFER_BOTTOM = 0.82f
-        private const val ICON_REGION_WIDTH = 0.155f
+        private const val ICON_REGION_WIDTH = 0.13f
         private const val ICON_REGION_HEIGHT = 0.075f
         private const val MATCH_THRESHOLD = 0.86
+        private const val MIN_MATCH_MARGIN = 0.04
+        private const val COLOUR_GRID_SIZE = 4
+        private const val COLOUR_CELL_SIZE = 8
         private const val PROFIT_STICKER_THRESHOLD = 500.0
     }
 }
