@@ -328,13 +328,12 @@ class So2AccessibilityService : AccessibilityService() {
                 output.fd.sync()
             }
             AutomationBridge.update(
-                status = "Недостаточно голды. Снимок сохранён: " + file.name +
-                    ". Мониторинг остановлен, экран телефона блокируется."
+                status = "Недостаточно голды. Снимок экрана сохранён: " + file.name +
+                    ". Мониторинг остановлен; возвращаюсь с экрана Gold."
             )
         }.onFailure { error ->
             AutomationBridge.update(status = "Нехватка голды; ошибка сохранения снимка: " + error.message)
         }
-        performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
     }
 
     fun lockScreen(): Boolean = performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
