@@ -373,11 +373,11 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                         return
                     }
                     catalogSortFrames += 1
-                    if (catalogSortFrames >= 2) {
-                        // Some game builds immediately apply ascending order when the Price option is selected.
+                    if (catalogSortFrames >= 2 && canAct()) {
+                        service.tapConfigured("sort_ascending", 0.12f, 0.31f)
                         catalogSortDirectionSelected = true
                         phase = Phase.CATALOG_SCAN
-                        actionStatus("Сортировка по цене выбрана. Продолжаю просмотр карточек.")
+                        actionStatus("Выбрано направление сортировки от самой дешёвой цены к самой дорогой.")
                     }
                     return
                 }
