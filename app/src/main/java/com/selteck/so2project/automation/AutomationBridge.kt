@@ -20,6 +20,7 @@ object AutomationBridge {
     val state: StateFlow<MonitorSnapshot> = _state.asStateFlow()
     @Volatile var service: So2AccessibilityService? = null
     @Volatile var monitoringRequested = false
+    @Volatile var paused = false
     @Volatile var targetPackage: String? = null
     @Volatile var mode: RunMode? = null
     @Volatile var selectedWeapon = ""
@@ -37,6 +38,7 @@ object AutomationBridge {
         selectedCategory = category
         this.minStickerPrice = minStickerPrice
         this.minProfit = minProfit
+        paused = false
         monitoringRequested = true
         update(status = "Ожидание запуска Standoff 2", mode = mode)
     }
@@ -49,6 +51,7 @@ object AutomationBridge {
     fun detach(service: So2AccessibilityService) {
         if (this.service === service) this.service = null
         monitoringRequested = false
+        paused = false
         update(connected = false, status = "Служба отключена")
     }
 
