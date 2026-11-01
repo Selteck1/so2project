@@ -46,6 +46,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     private var pendingStickerIndex = 0
     private var stickerOpenWaitFrames = 0
     private var stickerBackAttempts = 0
+    private var pendingOfferScreenSignature = ""
 
     private data class PendingPurchase(
         val itemName: String,
@@ -546,6 +547,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     }
 
     private fun tapNextOfferSticker(page: OcrPage) {
+        pendingOfferScreenSignature = OcrPage.normalize(page.fullText)
         val offer = pendingOfferInspection ?: run {
             pause("Потерял данные проверяемого лота. Покупка остановлена.")
             return
@@ -577,7 +579,8 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
 
     private fun handleOfferStickerOpen(page: OcrPage, reading: ScreenReading) {
         val stillOfferRows = reading.kind == ScreenKind.OFFERS &&
-            page.findLineContaining("С наклейками") != null
+            page.findLineContaining("С наклейками") != null &&
+            OcrPage.normalize(page.fullText) == pendingOfferScreenSignature
         if (!stillOfferRows) {
             val backAccepted = service.goBack()
             phase = Phase.OFFER_STICKER_WAIT_ROW
@@ -665,23 +668,35 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         )
     }
 
+    private fun closePurchaseDialog(reason: String) {
+        pendingPurchase = null
+        pendingOfferInspection = null
+        val point = AutomationCoordinates.get(service, "purchase_close")
+        val accepted = service.tapNormalized(point.x, point.y)
+        phase = Phase.PAUSED
+        AutomationBridge.monitoringRequested = false
+        AutomationBridge.update(
+            status = if (accepted) reason else reason + " Android не принял касание крестика; нажми его вручную."
+        )
+    }
+
     private fun confirmPurchase(page: OcrPage) {
         val expected = pendingPurchase
         if (expected == null) {
-            pause("Появилось неподтверждённое окно покупки. Ничего не нажимаю.")
+            closePurchaseDialog("Появилось неподтверждённое окно покупки. Закрываю его крестиком.")
             return
         }
 
         val normalizedText = OcrPage.normalize(page.fullText)
         if (!normalizedText.contains(OcrPage.normalize(expected.itemName))) {
-            pause("Название в окне покупки не совпало с выбранным скином. Покупка отменена.")
+            closePurchaseDialog("Название в окне покупки не совпало с выбранным скином. Закрываю окно без покупки.")
             return
         }
 
         val matchingPrice = ScreenClassifier.extractPrices(page.fullText)
             .any { kotlin.math.abs(it - expected.price) < 0.005 }
         if (!matchingPrice) {
-            pause("Цена в окне покупки не совпала с найденным лотом. Покупка отменена.")
+            closePurchaseDialog("Цена в окне покупки не совпала с найденным лотом. Закрываю окно без покупки.")
             return
         }
 
@@ -694,7 +709,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
             .minByOrNull { kotlin.math.abs(it.bounds.centerY() - page.height * 0.74f) }
 
         if (buyLine == null) {
-            pause("Не нашёл кнопку подтверждения покупки в ожидаемом окне. Покупка отменена.")
+            closePurchaseDialog("Не нашёл кнопку подтверждения покупки. Закрываю окно без покупки.")
             return
         }
 
