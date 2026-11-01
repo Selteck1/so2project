@@ -133,7 +133,9 @@ class So2AccessibilityService : AccessibilityService() {
                                     AutomationBridge.update(
                                         lastText = page.fullText,
                                         lastScreen = reading.kind.name,
-                                        status = "Распознан экран: " + reading.kind
+                                        status = if (AutomationBridge.paused)
+                                            "ПАУЗА · распознан экран: " + reading.kind
+                                        else "Распознан экран: " + reading.kind
                                     )
                                     automationEngine.onFrame(page, safeBitmap)
                                     floatingPanel?.update(
