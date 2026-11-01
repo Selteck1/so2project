@@ -111,6 +111,7 @@ class So2AccessibilityService : AccessibilityService() {
                     val bitmap = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
                     buffer.close()
                     if (bitmap == null) {
+                        if (saveCleanCopy) floatingPanel?.setVisible(true)
                         AutomationBridge.update(status = "Android не вернул изображение экрана")
                         captureInProgress.set(false)
                         return
@@ -170,6 +171,7 @@ class So2AccessibilityService : AccessibilityService() {
                         }
                     }
                 } catch (error: Exception) {
+                    if (saveCleanCopy) floatingPanel?.setVisible(true)
                     captureInProgress.set(false)
                     AutomationBridge.update(status = "Ошибка снимка экрана: " + error.message)
                 }
@@ -233,7 +235,14 @@ class So2AccessibilityService : AccessibilityService() {
 
     fun captureCleanScreenshot() {
         floatingPanel?.setVisible(false)
-        handler.postDelayed({ captureScreen(saveCleanCopy = true) }, 180L)
+        handler.postDelayed({
+            if (captureInProgress.get()) {
+                floatingPanel?.setVisible(true)
+                AutomationBridge.update(status = "Скриншот уже выполняется. Попробуй ещё раз через секунду.")
+            } else {
+                captureScreen(saveCleanCopy = true)
+            }
+        }, 180L)
     }
 
     fun tapAnchorConfigured(key: String, anchorX: Float, anchorY: Float): Boolean {
