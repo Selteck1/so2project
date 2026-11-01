@@ -24,7 +24,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     private var searchDone = false
     private var applyDone = false
     private var stickersToggleAttempts = 0
-    private var lastActivitySignature = ""
+    private val seenActivitySignatures = LinkedHashSet<String>()
     private var lastCatalogPageSignature = ""
     private var catalogStalePages = 0
     private var catalogPageCount = 0
@@ -317,13 +317,19 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         bitmap: Bitmap
     ) {
         if (isInspectingDeal) return
-        val activity = reading.recentActivityLines.firstOrNull {
-            !it.text.contains("не было последних действий", ignoreCase = true)
+        val activity = reading.recentActivityLines.firstOrNull { line ->
+            val candidate = OcrPage.normalize(line.text)
+            candidate.isNotBlank() &&
+                !candidate.contains("не было последних действий") &&
+                candidate !in seenActivitySignatures
         } ?: return
 
-        val signature = activity.text.trim()
-        if (signature == lastActivitySignature) return
-        lastActivitySignature = signature
+        val signature = OcrPage.normalize(activity.text)
+        if (!seenActivitySignatures.add(signature)) return
+        if (seenActivitySignatures.size > MAX_SEEN_ACTIVITY_LINES) {
+            val oldest = seenActivitySignatures.firstOrNull()
+            if (oldest != null) seenActivitySignatures.remove(oldest)
+        }
 
         val price = ScreenClassifier.extractPrices(signature).lastOrNull()
         if (price == null) {
@@ -377,10 +383,15 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
             }
 
             pendingPurchase = PendingPurchase(targetName(), profitable.price, profitable.centerY)
-            service.tapNormalized(
+            val accepted = service.tapNormalized(
                 buyWord.bounds.centerX().toFloat() / page.width,
                 buyWord.bounds.centerY().toFloat() / page.height
             )
+            if (!accepted) {
+                pendingPurchase = null
+                pause("Android не принял нажатие на найденную кнопку покупки. Останавливаюсь.")
+                return@inspectCandidateRowsAsync
+            }
             phase = Phase.WATCH_ACTIVITY
             actionStatus(
                 "Окуп найден: прибыль " + String.format("%.2f", profitable.estimatedProfit) +
@@ -423,9 +434,15 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
         }
 
         if (canAct()) {
-            tapLine(page, buyLine, "Подтверждаю совпавший лот за " + String.format("%.2f", expected.price) + " G")
+            val center = page.normalizedCenter(buyLine)
+            val accepted = service.tapNormalized(center.first, center.second)
+            if (!accepted) {
+                pause("Android не принял нажатие подтверждения. Покупка не считается выполненной.")
+                return
+            }
             pendingPurchase = null
             phase = Phase.WATCH_ACTIVITY
+            actionStatus("Нажатие подтверждения принято Android. Проверяю возврат к списку предложений.")
         }
     }
 
@@ -458,6 +475,7 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     companion object {
         private const val ACTION_COOLDOWN_MS = 1300L
         private const val MAX_CATALOG_PAGES = 80
+        private const val MAX_SEEN_ACTIVITY_LINES = 100
         private const val GRID_START_X = 0.247f
         private const val GRID_STEP_X = 0.185f
         private const val GRID_CARD_WIDTH = 0.18f
