@@ -25,6 +25,29 @@ data class OcrPage(
     val fullText: String
         get() = lines.joinToString("\n") { it.text }
 
+    /**
+     * Price tokens with exact word rectangles. Both the offer matcher and scanner
+     * consume this list so they never reconstruct click/crop locations from line text.
+     */
+    val locatedPrices: List<LocatedPrice>
+        get() {
+            val linesByIndex = lines.associateBy { it.lineIndex }
+            val expression = Regex("""(?<![\\d])([0-9]{1,7}[.,][0-9]{2})(?![\\d])""")
+            return words.flatMap { word ->
+                expression.findAll(word.text).mapNotNull { match ->
+                    match.groupValues.getOrNull(1)?.replace(',', '.')?.toDoubleOrNull()?.let { amount ->
+                        val line = linesByIndex[word.lineIndex] ?: OcrLine(
+                            text = word.text,
+                            bounds = Rect(word.bounds),
+                            confidence = word.confidence,
+                            lineIndex = word.lineIndex
+                        )
+                        LocatedPrice(amount, line, Rect(word.bounds))
+                    }
+                }.toList()
+            }
+        }
+
     fun findLineContaining(fragment: String): OcrLine? {
         val needle = normalize(fragment)
         if (needle.isBlank()) return null
