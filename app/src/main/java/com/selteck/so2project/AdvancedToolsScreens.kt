@@ -45,7 +45,9 @@ import com.selteck.so2project.automation.CoordinateSpec
 import com.selteck.so2project.automation.StickerCatalogScanner
 import com.selteck.so2project.data.So2Database
 import com.selteck.so2project.data.StickerEntity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -152,7 +154,18 @@ fun ManualStickerContent(context: Context, onBack: () -> Unit) {
         if (uri != null) {
             selectedUri = uri
             val decoded = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(uri)?.use {
+                    BitmapFactory.decodeStream(it, null, bounds)
+                }
+                var sample = 1
+                while (bounds.outWidth / sample > 1200 || bounds.outHeight / sample > 1200) {
+                    sample *= 2
+                }
+                val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                context.contentResolver.openInputStream(uri)?.use {
+                    BitmapFactory.decodeStream(it, null, options)
+                }
             }.getOrNull()
             previewBitmap?.recycle()
             previewBitmap = decoded
@@ -224,32 +237,45 @@ fun ManualStickerContent(context: Context, onBack: () -> Unit) {
                     saving = true
                     status = "Сохраняю изображение и отпечаток…"
                     val safeBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                    if (safeBitmap == null) {
+                        status = "Не удалось подготовить изображение. Выбери файл меньшего размера."
+                        return@Button
+                    }
+                    val safeName = name.trim()
+                    val safeVariant = variant.trim()
                     scope.launch {
-                        val result = runCatching {
-                            val scanner = StickerCatalogScanner(context)
-                            val fingerprint = scanner.calculateFingerprint(safeBitmap)
-                                ?: error("Изображение слишком пустое или однотонное. Загрузи более крупный кадр наклейки.")
-                            val directory = File(context.filesDir, "sticker_catalog/manual")
-                            if (!directory.exists()) directory.mkdirs()
-                            val imageFile = File(directory, "manual_${System.currentTimeMillis()}.png")
-                            FileOutputStream(imageFile).use { stream ->
-                                safeBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val scanner = StickerCatalogScanner(context)
+                                val fingerprint = scanner.calculateFingerprint(safeBitmap)
+                                    ?: error("Изображение слишком пустое или однотонное. Загрузи более крупный кадр наклейки.")
+                                val directory = File(context.filesDir, "sticker_catalog/manual")
+                                if (!directory.exists() && !directory.mkdirs()) {
+                                    error("Не удалось создать папку базы изображений.")
+                                }
+                                val imageFile = File(directory, "manual_${System.currentTimeMillis()}.png")
+                                FileOutputStream(imageFile).use { stream ->
+                                    if (!safeBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
+                                        error("Не удалось записать PNG.")
+                                    }
+                                    stream.flush()
+                                }
+                                val record = StickerEntity(
+                                    name = safeName,
+                                    marketPrice = parsedPrice,
+                                    visualVariant = safeVariant.ifBlank { fingerprint.take(20) },
+                                    imagePath = imageFile.absolutePath,
+                                    visualHash = fingerprint
+                                )
+                                So2Database.get(context).stickerDao().upsert(record)
+                                imageFile.name
                             }
-                            val record = StickerEntity(
-                                name = name.trim(),
-                                marketPrice = parsedPrice,
-                                visualVariant = variant.trim().ifBlank { fingerprint.take(20) },
-                                imagePath = imageFile.absolutePath,
-                                visualHash = fingerprint
-                            )
-                            So2Database.get(context).stickerDao().upsert(record)
-                            imageFile.name
                         }
                         safeBitmap.recycle()
                         saving = false
                         status = result.fold(
                             onSuccess = { "Добавлено в базу: ${it}" },
-                            onFailure = { "Не удалось сохранить: ${it.message}" }
+                            onFailure = { "Не удалось сохранить: ${it.message ?: "ошибка"}" }
                         )
                     }
                 }
