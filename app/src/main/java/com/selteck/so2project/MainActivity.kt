@@ -168,7 +168,7 @@ private fun So2App(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 18.dp, vertical = 16.dp)
+                    .padding(horizontal = 12.dp, vertical = 9.dp)
             ) {
                 Text("SO2 PROJECT", color = So2Gold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 Text(
@@ -181,15 +181,15 @@ private fun So2App(
                         Page.ADD_STICKER -> "Добавить наклейку"
                         Page.GUIDE -> "Пошаговая инструкция"
                     },
-                    fontSize = 27.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
+                    modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
                 )
 
                 when (page) {
                     Page.HOME -> {
                         StatusCard(accessibilityEnabled, statusMessage + "\n" + monitorState.status, monitorState.lastScreen)
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(9.dp))
                         Button(
                             onClick = {
                                 val found = findGame()
@@ -201,15 +201,15 @@ private fun So2App(
                                     page = Page.CONFIG
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = So2Gold)
                         ) {
                             Text("ЗАПУСТИТЬ", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(6.dp))
                         OutlinedButton(
                             onClick = { page = Page.DATABASE },
-                            modifier = Modifier.fillMaxWidth().height(54.dp)
+                            modifier = Modifier.fillMaxWidth().height(44.dp)
                         ) {
                             Text("ЗАПОЛНИТЬ БАЗУ ДАННЫХ")
                         }
@@ -220,11 +220,11 @@ private fun So2App(
                                 statusMessage = "Мониторинг остановлен пользователем"
                             },
                             enabled = AutomationBridge.monitoringRequested,
-                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
                         ) {
                             Text("ОСТАНОВИТЬ МОНИТОРИНГ")
                         }
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(7.dp))
                         Text(
                             "Для чтения экрана и касаний Android попросит отдельно включить службу специальных возможностей.",
                             color = So2Muted,
@@ -244,7 +244,7 @@ private fun So2App(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(8.dp))
                         Text("Категория", color = So2Muted, fontSize = 13.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             listOf("Regular", "StatTrack").forEach { item ->
@@ -292,7 +292,7 @@ private fun So2App(
                             colors = CardDefaults.cardColors(containerColor = So2Surface),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(Modifier.padding(16.dp)) {
+                            Column(Modifier.padding(12.dp)) {
                                 Text("Записей в базе", color = So2Muted)
                                 Text(count.toString(), color = So2Gold, fontSize = 34.sp, fontWeight = FontWeight.Bold)
                                 Text(
