@@ -271,9 +271,18 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
                     val cards = service.catalogScanner.scanVisibleCards(page, bitmap)
                     discoveredOffers += cards
                     catalogPageCount += 1
-                    val signature = page.lines.filter {
-                        it.text.contains("Sticker", ignoreCase = true)
-                    }.joinToString("|") { it.text }
+                    val signature = page.lines
+                        .filter { line ->
+                            val x = line.bounds.centerX().toFloat() / page.width
+                            val y = line.bounds.centerY().toFloat() / page.height
+                            x in 0.23f..0.99f && y in 0.18f..0.91f &&
+                                line.text.any { it.isLetter() }
+                        }
+                        .joinToString("|") { it.text.trim() } + "|" +
+                        page.locatedPrices
+                            .filter { it.bounds.centerY() in
+                                (page.height * 0.18f).toInt()..(page.height * 0.91f).toInt() }
+                            .joinToString("|") { String.format("%.2f", it.value) }
                     if (signature == lastCatalogPageSignature || cards == 0) {
                         catalogStalePages += 1
                     } else {

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface StickerDao {
@@ -18,4 +19,7 @@ interface StickerDao {
 
     @Query("SELECT COUNT(*) FROM sticker_catalog")
     suspend fun count(): Int
+
+    @Query("SELECT COUNT(*) FROM sticker_catalog")
+    fun observeCount(): Flow<Int>
 }

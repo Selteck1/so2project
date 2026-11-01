@@ -281,18 +281,17 @@ private fun So2App(
                     }
 
                     Page.DATABASE -> {
-                        val count = produceState(initialValue = 0) {
-                            value = withContext(Dispatchers.IO) {
-                                So2Database.get(context).stickerDao().count()
-                            }
-                        }
+                        val count by So2Database.get(context)
+                            .stickerDao()
+                            .observeCount()
+                            .collectAsState(initial = 0)
                         Card(
                             colors = CardDefaults.cardColors(containerColor = So2Surface),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(Modifier.padding(16.dp)) {
                                 Text("Записей в базе", color = So2Muted)
-                                Text(count.value.toString(), color = So2Gold, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+                                Text(count.toString(), color = So2Gold, fontSize = 34.sp, fontWeight = FontWeight.Bold)
                                 Text(
                                     "Для каждой наклейки будут храниться название, цена, вариант перелива и визуальный отпечаток.",
                                     color = So2Muted,
@@ -313,6 +312,12 @@ private fun So2App(
                             color = So2Muted,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(top = 12.dp)
+                        )
+                        Text(
+                            "Состояние: " + monitorState.status,
+                            color = So2Gold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 10.dp)
                         )
                     }
 
