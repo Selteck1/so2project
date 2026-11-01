@@ -681,13 +681,20 @@ class ScreenAutomationEngine(private val service: So2AccessibilityService) {
     }
 
     private fun confirmPurchase(page: OcrPage) {
+        val normalizedText = OcrPage.normalize(page.fullText)
+        if (normalizedText.contains("недостаточно средств") ||
+            normalizedText.contains("insufficient funds")
+        ) {
+            closePurchaseDialog("В окне покупки недостаточно голды. Закрываю крестиком без покупки.")
+            return
+        }
+
         val expected = pendingPurchase
         if (expected == null) {
             closePurchaseDialog("Появилось неподтверждённое окно покупки. Закрываю его крестиком.")
             return
         }
 
-        val normalizedText = OcrPage.normalize(page.fullText)
         if (!normalizedText.contains(OcrPage.normalize(expected.itemName))) {
             closePurchaseDialog("Название в окне покупки не совпало с выбранным скином. Закрываю окно без покупки.")
             return
