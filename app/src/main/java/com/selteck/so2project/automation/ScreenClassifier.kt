@@ -62,13 +62,13 @@ object ScreenClassifier {
     }
 
     private fun classifyText(text: String): ScreenKind = when {
+        "ошибка" in text || Regex("""\berror\b""").containsMatchIn(text) -> ScreenKind.ERROR_DIALOG
+        ("подтвердите покупку" in text || "confirm purchase" in text) &&
+            ("покупка" in text || "purchase" in text) -> ScreenKind.PURCHASE_CONFIRM
         "недостаточно средств" in text ||
             "insufficient funds" in text ||
             ("недостаточно" in text && ("голд" in text || "пополните" in text || "баланс" in text)) ->
             ScreenKind.LOW_BALANCE
-        "ошибка" in text || Regex("""\berror\b""").containsMatchIn(text) -> ScreenKind.ERROR_DIALOG
-        ("подтвердите покупку" in text || "confirm purchase" in text) &&
-            ("покупка" in text || "purchase" in text) -> ScreenKind.PURCHASE_CONFIRM
         "с наклейками" in text && ("предложений" in text || "купить" in text) -> ScreenKind.OFFERS
         "применить" in text && "сбросить" in text -> ScreenKind.MARKET_FILTERS
         "история продаж" in text || "история покупок" in text -> ScreenKind.HISTORY
